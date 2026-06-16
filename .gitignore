@@ -1,0 +1,17 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local configuration and private CV data.
+config/settings.toml
+data/cv.txt
+data/*.sqlite3
+data/*.sqlite3-*
+
+# Generated outputs.
+reports/

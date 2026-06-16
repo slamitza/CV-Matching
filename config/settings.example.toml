@@ -1,0 +1,41 @@
+# Copy this file to config/settings.toml and edit it for your search.
+
+database_path = "data/job_matcher.sqlite3"
+minimum_score = 35
+
+# These terms are used by source adapters that support search queries.
+search_terms = [
+  "python developer",
+  "software engineer",
+  "data engineer"
+]
+
+[cv]
+path = "data/cv.txt"
+
+# Required keywords receive extra weight in the score.
+required_keywords = [
+  "python",
+  "sql",
+  "automation"
+]
+
+[[sources]]
+name = "remote-python"
+type = "remotive"
+enabled = true
+search = "python"
+category = "software-dev"
+
+[[sources]]
+name = "manual-csv"
+type = "csv"
+enabled = false
+path = "data/manual_jobs.csv"
+
+[[sources]]
+name = "rss-example"
+type = "rss"
+enabled = false
+url = "https://example.com/jobs.rss"
+default_company = "Unknown"

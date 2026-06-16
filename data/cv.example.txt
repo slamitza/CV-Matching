@@ -1,0 +1,7 @@
+Replace this file with the plain-text version of your CV.
+
+Example:
+
+Python developer with experience in automation, SQL, data pipelines, APIs,
+web scraping with permission, backend services, cloud deployment, and
+technical project delivery.
