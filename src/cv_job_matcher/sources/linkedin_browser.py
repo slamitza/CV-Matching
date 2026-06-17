@@ -205,6 +205,9 @@ class LinkedInBrowserSource(JobSource):
             if self.max_results_per_search > 0 and len(postings) >= self.max_results_per_search:
                 break
 
+            if _visible_job_card_count(page) == 0:
+                break
+
             if not self._go_to_next_results_page(page, search, page_index + 1):
                 break
 
@@ -376,6 +379,22 @@ def _job_card_locators(page: object) -> object:
         if locator.count() > 0:
             return locator
     return page.locator("__missing_linkedin_job_card__")
+
+
+def _visible_job_card_count(page: object) -> int:
+    cards = _job_card_locators(page)
+    try:
+        card_count = cards.count()
+    except Exception:
+        return 0
+    visible_count = 0
+    for index in range(card_count):
+        try:
+            if cards.nth(index).is_visible(timeout=500):
+                visible_count += 1
+        except Exception:
+            continue
+    return visible_count
 
 
 def _first_text(parent: object, selectors: list[str]) -> str | None:

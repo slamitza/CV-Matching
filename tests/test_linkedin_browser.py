@@ -9,7 +9,35 @@ from cv_job_matcher.sources.linkedin_browser import (
     _normalize_linkedin_url,
     _source_id,
     _title_has_excluded_keyword,
+    _visible_job_card_count,
 )
+
+
+class FakeCard:
+    def __init__(self, visible: bool):
+        self.visible = visible
+
+    def is_visible(self, timeout: int = 0) -> bool:
+        return self.visible
+
+
+class FakeCards:
+    def __init__(self, cards: list[FakeCard]):
+        self.cards = cards
+
+    def count(self) -> int:
+        return len(self.cards)
+
+    def nth(self, index: int) -> FakeCard:
+        return self.cards[index]
+
+
+class FakePage:
+    def __init__(self, cards: list[FakeCard]):
+        self.cards = FakeCards(cards)
+
+    def locator(self, selector: str) -> FakeCards:
+        return self.cards
 
 
 class LinkedInBrowserSourceTests(unittest.TestCase):
@@ -51,6 +79,15 @@ class LinkedInBrowserSourceTests(unittest.TestCase):
         self.assertEqual(0, source.max_results_per_search)
         self.assertEqual(0, source.max_pages_per_search)
         self.assertGreaterEqual(ABSOLUTE_PAGE_SAFETY_LIMIT, 50)
+
+    def test_visible_job_card_count_detects_empty_pages(self) -> None:
+        self.assertEqual(0, _visible_job_card_count(FakePage([])))
+        self.assertEqual(
+            2,
+            _visible_job_card_count(
+                FakePage([FakeCard(True), FakeCard(False), FakeCard(True)])
+            ),
+        )
 
 
 if __name__ == "__main__":

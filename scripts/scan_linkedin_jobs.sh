@@ -26,3 +26,13 @@ PYTHONPATH="$ROOT_DIR/src" "$PYTHON" -m cv_job_matcher \
 PYTHONPATH="$ROOT_DIR/src" "$PYTHON" -m cv_job_matcher \
   --config "$CONFIG" \
   export-jobs --source linkedin-browser --out "$ROOT_DIR/reports/linkedin_jobs.csv"
+
+PYTHONPATH="$ROOT_DIR/src" "$PYTHON" -m cv_job_matcher \
+  --config "$CONFIG" \
+  export-jobs-html --source linkedin-browser --out "$ROOT_DIR/reports/linkedin_jobs.html"
+
+if command -v open >/dev/null 2>&1; then
+  open "$ROOT_DIR/reports/linkedin_jobs.html"
+else
+  printf '%s\n' "Open report: $ROOT_DIR/reports/linkedin_jobs.html"
+fi
