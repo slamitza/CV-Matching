@@ -1,0 +1,3 @@
+source_id,title,company,location,url,description,posted_at,remote
+linkedin-example-1,Python Developer,Example Company,"Zurich, Switzerland",https://www.linkedin.com/jobs/view/example,"Python automation role with SQL and APIs.",2026-06-17,true
+company-careers-example-1,Software Engineer,Example Employer,"Remote Switzerland",https://example.com/careers/software-engineer,"Backend role from company careers page.",2026-06-17,true

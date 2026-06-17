@@ -11,6 +11,7 @@ requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "CV Job Matcher" }]
 dependencies = [
+  "playwright>=1.60.0",
   "tomli>=2; python_version < '3.11'"
 ]
 

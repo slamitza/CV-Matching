@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import argparse
+import csv
 import sys
 
 from .config import load_settings
@@ -39,9 +40,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     jobs_parser = subparsers.add_parser("jobs", help="List matched jobs.")
     jobs_parser.add_argument("--min-score", type=float, default=None)
+    jobs_parser.add_argument(
+        "--scored-only",
+        action="store_true",
+        help="Filter by match score. Scoring is opt-in via score_jobs = true.",
+    )
     jobs_parser.add_argument("--status", default=None)
+    jobs_parser.add_argument("--source", default=None)
     jobs_parser.add_argument("--limit", type=int, default=25)
     jobs_parser.set_defaults(func=cmd_jobs)
+
+    new_jobs_parser = subparsers.add_parser(
+        "new-jobs",
+        help="List non-duplicate jobs first seen in the latest successful scan.",
+    )
+    new_jobs_parser.add_argument("--source", default=None)
+    new_jobs_parser.add_argument("--limit", type=int, default=100)
+    new_jobs_parser.set_defaults(func=cmd_new_jobs)
+
+    export_parser = subparsers.add_parser("export-jobs", help="Export saved jobs to CSV.")
+    export_parser.add_argument("--source", default=None)
+    export_parser.add_argument("--out", required=True)
+    export_parser.add_argument("--limit", type=int, default=10000)
+    export_parser.set_defaults(func=cmd_export_jobs)
 
     apply_parser = subparsers.add_parser("apply", help="Record or update an application for a job.")
     apply_parser.add_argument("job_id", type=int)
@@ -82,20 +103,74 @@ def cmd_jobs(args: argparse.Namespace) -> int:
     database = Database(settings.database_path)
     database.init()
     min_score = settings.minimum_score if args.min_score is None else args.min_score
-    rows = database.list_jobs(min_score=min_score, status=args.status, limit=args.limit)
+    scored_only = bool(args.scored_only or args.min_score is not None)
+    rows = database.list_jobs(
+        min_score=min_score,
+        status=args.status,
+        source=args.source,
+        limit=args.limit,
+        scored_only=scored_only,
+    )
     print_table(
         rows,
         [
             ("id", "ID"),
-            ("match_score", "Score"),
+            ("website", "Website"),
+            ("source_id", "Posting"),
             ("company", "Company"),
             ("title", "Title"),
             ("location", "Location"),
             ("source", "Source"),
+            ("posted_at", "Posted"),
+            ("seen_count", "Seen"),
+            ("last_seen_at", "Last Seen"),
             ("status", "Status"),
             ("url", "URL"),
         ],
     )
+    return 0
+
+
+def cmd_new_jobs(args: argparse.Namespace) -> int:
+    settings = load_settings(resolve_config_path(args.config))
+    database = Database(settings.database_path)
+    database.init()
+    rows = database.list_new_jobs_from_latest_scan(source=args.source, limit=args.limit)
+    print_table(
+        rows,
+        [
+            ("website", "Website"),
+            ("source_id", "JobID"),
+            ("title", "Job title"),
+            ("company", "Company"),
+            ("url", "URL"),
+        ],
+    )
+    return 0
+
+
+def cmd_export_jobs(args: argparse.Namespace) -> int:
+    settings = load_settings(resolve_config_path(args.config))
+    database = Database(settings.database_path)
+    database.init()
+    rows = database.list_jobs(source=args.source, limit=args.limit)
+    output_path = Path(args.out)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    columns = [
+        ("website", "Website"),
+        ("source_id", "JobID"),
+        ("title", "Job title"),
+        ("company", "Company"),
+        ("url", "URL"),
+    ]
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow([label for _key, label in columns])
+        for row in rows:
+            writer.writerow([row[key] if row[key] is not None else "" for key, _label in columns])
+
+    print(f"Exported {len(rows)} jobs to {output_path}")
     return 0
 
 

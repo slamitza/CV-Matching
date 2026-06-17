@@ -8,6 +8,15 @@ from typing import Any
 from .models import JobPosting, MatchResult
 
 
+SITE_LABEL_SQL = """
+CASE jobs.source
+    WHEN 'linkedin-browser' THEN 'LinkedIn'
+    WHEN 'job-ch' THEN 'job.ch'
+    ELSE jobs.source
+END
+"""
+
+
 def utc_now_sql() -> str:
     return "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
 
@@ -47,6 +56,7 @@ class Database:
                     posted_at TEXT,
                     first_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                     last_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                    seen_count INTEGER NOT NULL DEFAULT 1,
                     status TEXT NOT NULL DEFAULT 'new',
                     match_score REAL NOT NULL DEFAULT 0,
                     matched_keywords TEXT NOT NULL DEFAULT '[]',
@@ -58,6 +68,7 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(match_score DESC);
                 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
                 CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company_id);
+                CREATE INDEX IF NOT EXISTS idx_jobs_last_seen ON jobs(last_seen_at DESC);
 
                 CREATE TABLE IF NOT EXISTS applications (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,6 +94,20 @@ class Database:
                 );
                 """
             )
+            self._migrate(connection)
+
+    def _migrate(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+        }
+        if "seen_count" not in columns:
+            connection.execute(
+                "ALTER TABLE jobs ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 1"
+            )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_last_seen ON jobs(last_seen_at DESC)"
+        )
 
     def get_or_create_company(self, connection: sqlite3.Connection, name: str) -> int:
         normalized_name = " ".join(name.split()) or "Unknown"
@@ -133,6 +158,7 @@ class Database:
                         description = ?,
                         posted_at = ?,
                         last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                        seen_count = seen_count + 1,
                         match_score = ?,
                         matched_keywords = ?,
                         missing_keywords = ?,
@@ -155,12 +181,13 @@ class Database:
                     url,
                     description,
                     posted_at,
+                    seen_count,
                     match_score,
                     matched_keywords,
                     missing_keywords,
                     raw
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
                 """,
                 (job.source, job.source_id, *payload),
             )
@@ -199,29 +226,89 @@ class Database:
         *,
         min_score: float = 0,
         status: str | None = None,
+        source: str | None = None,
         limit: int = 25,
+        scored_only: bool = False,
     ) -> list[sqlite3.Row]:
         query = [
             """
             SELECT
                 jobs.id,
+                """ + SITE_LABEL_SQL + """ AS website,
+                jobs.source_id,
                 jobs.title,
                 companies.name AS company,
                 jobs.location,
                 jobs.source,
+                jobs.posted_at,
+                jobs.first_seen_at,
+                jobs.last_seen_at,
+                jobs.seen_count,
                 jobs.match_score,
                 jobs.status,
                 jobs.url
             FROM jobs
             JOIN companies ON companies.id = jobs.company_id
-            WHERE jobs.match_score >= ?
+            WHERE 1 = 1
             """
         ]
-        params: list[Any] = [min_score]
+        params: list[Any] = []
+        if scored_only:
+            query.append("AND jobs.match_score >= ?")
+            params.append(min_score)
         if status:
             query.append("AND jobs.status = ?")
             params.append(status)
-        query.append("ORDER BY jobs.match_score DESC, jobs.first_seen_at DESC LIMIT ?")
+        if source:
+            query.append("AND jobs.source = ?")
+            params.append(source)
+        query.append("ORDER BY jobs.last_seen_at DESC, jobs.first_seen_at DESC LIMIT ?")
+        params.append(limit)
+
+        with self.connect() as connection:
+            return list(connection.execute("\n".join(query), params).fetchall())
+
+    def list_new_jobs_from_latest_scan(
+        self,
+        *,
+        source: str | None = None,
+        limit: int = 100,
+    ) -> list[sqlite3.Row]:
+        query = [
+            """
+            SELECT
+                """ + SITE_LABEL_SQL + """ AS website,
+                jobs.source_id,
+                jobs.title,
+                companies.name AS company,
+                jobs.url
+            FROM jobs
+            JOIN companies ON companies.id = jobs.company_id
+            WHERE jobs.seen_count = 1
+              AND jobs.first_seen_at >= COALESCE(
+                (
+                    SELECT scans.started_at
+                    FROM scans
+                    WHERE scans.error IS NULL
+            """
+        ]
+        params: list[Any] = []
+        if source:
+            query.append("AND scans.source = ?")
+            params.append(source)
+        query.append(
+            """
+                    ORDER BY scans.started_at DESC
+                    LIMIT 1
+                ),
+                '0000-01-01T00:00:00Z'
+              )
+            """
+        )
+        if source:
+            query.append("AND jobs.source = ?")
+            params.append(source)
+        query.append("ORDER BY jobs.first_seen_at DESC LIMIT ?")
         params.append(limit)
 
         with self.connect() as connection:

@@ -26,6 +26,25 @@ class MatcherTests(unittest.TestCase):
         self.assertIn("python", result.matched_keywords)
         self.assertEqual([], result.missing_keywords)
 
+    def test_ai_and_ml_are_kept_as_keywords(self) -> None:
+        profile = build_profile(
+            "AI engineer with ML, Python, statistics, and bioinformatics experience.",
+            required_keywords=["ai", "ml", "python", "bioinformatics"],
+        )
+        job = JobPosting(
+            source="test",
+            source_id="2",
+            title="AI / ML Engineer",
+            company="Example Co",
+            description="Python role supporting bioinformatics models.",
+        )
+
+        result = score_job(profile, job)
+
+        self.assertIn("ai", result.matched_keywords)
+        self.assertIn("ml", result.matched_keywords)
+        self.assertEqual([], result.missing_keywords)
+
 
 if __name__ == "__main__":
     unittest.main()

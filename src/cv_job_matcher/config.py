@@ -23,6 +23,7 @@ class SourceConfig:
 class Settings:
     database_path: Path
     cv_path: Path
+    score_jobs: bool
     minimum_score: float
     search_terms: list[str]
     required_keywords: list[str]
@@ -54,6 +55,7 @@ def load_settings(path: str | Path) -> Settings:
     return Settings(
         database_path=Path(data.get("database_path", "data/job_matcher.sqlite3")),
         cv_path=Path(cv_config.get("path", "data/cv.txt")),
+        score_jobs=bool(data.get("score_jobs", False)),
         minimum_score=float(data.get("minimum_score", 0)),
         search_terms=[str(term) for term in data.get("search_terms", [])],
         required_keywords=[str(term).lower() for term in cv_config.get("required_keywords", [])],

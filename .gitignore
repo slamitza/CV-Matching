@@ -6,12 +6,15 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+*.egg-info/
 
 # Local configuration and private CV data.
 config/settings.toml
 data/cv.txt
+data/manual_jobs.csv
 data/*.sqlite3
 data/*.sqlite3-*
+data/browser-profiles/
 
 # Generated outputs.
 reports/

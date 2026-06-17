@@ -1,13 +1,22 @@
 # Copy this file to config/settings.toml and edit it for your search.
 
 database_path = "data/job_matcher.sqlite3"
+
+# Keep this false for a pure job-tracking database. Set true only if you
+# explicitly want CV keyword scoring in addition to dedupe/tracking.
+score_jobs = false
 minimum_score = 35
 
 # These terms are used by source adapters that support search queries.
 search_terms = [
-  "python developer",
-  "software engineer",
-  "data engineer"
+  "Data Science",
+  "Bioinformatics",
+  "AI engineer",
+  "ML engineer",
+  "Data Scientist",
+  "Biostatistic",
+  "Biostatistician",
+  "Research Engineer"
 ]
 
 [cv]
@@ -17,7 +26,11 @@ path = "data/cv.txt"
 required_keywords = [
   "python",
   "sql",
-  "automation"
+  "machine",
+  "learning",
+  "bioinformatics",
+  "ai",
+  "ml"
 ]
 
 [[sources]]
@@ -31,6 +44,8 @@ category = "software-dev"
 name = "manual-csv"
 type = "csv"
 enabled = false
+# Copy data/manual_jobs.example.csv to data/manual_jobs.csv and paste job alerts,
+# saved jobs, or manually reviewed LinkedIn/company listings there.
 path = "data/manual_jobs.csv"
 
 [[sources]]
@@ -39,3 +54,33 @@ type = "rss"
 enabled = false
 url = "https://example.com/jobs.rss"
 default_company = "Unknown"
+
+[[sources]]
+name = "linkedin-browser"
+type = "linkedin_browser"
+enabled = false
+profile_dir = "data/browser-profiles/linkedin-job-search"
+locale = "en-US"
+location = "Switzerland"
+# 0 means no configured cap. The code still has a high safety cap to avoid
+# infinite loops if LinkedIn pagination behaves unexpectedly.
+max_results_per_search = 0
+max_pages_per_search = 0
+feed_scrolls = 4
+result_scrolls = 40
+exclude_title_keywords = [
+  "writer",
+  "director",
+  "executive",
+  "junior"
+]
+searches = [
+  "Data Science",
+  "Bioinformatics",
+  "AI engineer",
+  "ML engineer",
+  "Data Scientist",
+  "Biostatistic",
+  "Biostatistician",
+  "Research Engineer"
+]

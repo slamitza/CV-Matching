@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from .config import Settings
 from .database import Database
 from .matcher import build_profile, score_job
+from .models import MatchResult
 from .sources import build_source
 
 
@@ -21,15 +22,16 @@ def scan(settings: Settings, *, source_names: set[str] | None = None, dry_run: b
     database = Database(settings.database_path)
     database.init()
 
-    cv_text = settings.cv_path.read_text(encoding="utf-8")
-    profile = build_profile(cv_text, settings.required_keywords)
+    profile = None
+    if settings.score_jobs:
+        cv_text = settings.cv_path.read_text(encoding="utf-8")
+        profile = build_profile(cv_text, settings.required_keywords)
 
     summaries: list[ScanSummary] = []
-    enabled_sources = [
-        source
-        for source in settings.sources
-        if source.enabled and (source_names is None or source.name in source_names)
-    ]
+    if source_names is None:
+        enabled_sources = [source for source in settings.sources if source.enabled]
+    else:
+        enabled_sources = [source for source in settings.sources if source.name in source_names]
     if not enabled_sources:
         raise ValueError("No enabled sources matched the requested scan.")
 
@@ -45,7 +47,11 @@ def scan(settings: Settings, *, source_names: set[str] | None = None, dry_run: b
             postings = list(source.fetch())
             found_count = len(postings)
             for posting in postings:
-                result = score_job(profile, posting)
+                result = (
+                    score_job(profile, posting)
+                    if profile is not None
+                    else MatchResult(score=0.0, matched_keywords=[], missing_keywords=[])
+                )
                 if dry_run:
                     continue
                 inserted = database.upsert_job(posting, result)

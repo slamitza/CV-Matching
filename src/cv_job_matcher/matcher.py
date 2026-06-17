@@ -39,6 +39,7 @@ STOP_WORDS = {
 
 
 TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+#.-]{1,}")
+SHORT_TECH_TERMS = {"ai", "ml"}
 
 
 @dataclass(frozen=True)
@@ -51,7 +52,7 @@ def tokenize(text: str) -> list[str]:
     tokens = []
     for raw_token in TOKEN_RE.findall(text):
         token = raw_token.lower().strip(".-")
-        if token not in STOP_WORDS and len(token) > 2:
+        if token not in STOP_WORDS and (len(token) > 2 or token in SHORT_TECH_TERMS):
             tokens.append(token)
     return tokens
 
