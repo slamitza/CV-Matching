@@ -114,6 +114,18 @@ To run one search only:
 ./scripts/review_indeed_in_chrome.sh --search "Data Science"
 ```
 
+## Known Limitation: Automated Chromium On Indeed
+
+Indeed may show Cloudflare verification or loop on "Verify you are human" when opened through an agent-controlled Chromium/Patchright browser. This can happen even when the same URL works in normal Google Chrome.
+
+When that happens, do not keep retrying the automated Indeed scan. Use the Chrome review workflow instead:
+
+```bash
+./scripts/review_indeed_in_chrome.sh
+```
+
+This opens Indeed in your normal Chrome browser, lets you pass verification manually, then saves visible jobs from the loaded tabs.
+
 ## Indeed Automation Profile
 
 The dedicated Indeed browser source opens a visible Chromium profile at:
