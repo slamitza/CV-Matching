@@ -14,6 +14,8 @@ class CliTests(unittest.TestCase):
                     "source_id": "123",
                     "title": "Data Scientist",
                     "company": "Example Co",
+                    "linkedin": "https://www.linkedin.com/jobs/view/123",
+                    "indeed": "",
                     "url": "https://www.linkedin.com/jobs/view/123",
                 },
                 {
@@ -21,13 +23,19 @@ class CliTests(unittest.TestCase):
                     "source_id": "456",
                     "title": "ML Engineer",
                     "company": "Another Co",
+                    "linkedin": "https://www.linkedin.com/jobs/view/456",
+                    "indeed": "",
                     "url": "https://www.linkedin.com/jobs/view/456",
                     "status": "applied",
                 },
             ],
             {"456"},
+            title="LinkedIn Jobs",
         )
 
+        self.assertIn("<title>LinkedIn Jobs</title>", html)
+        self.assertIn("<th>LinkedIn</th>", html)
+        self.assertIn("<th>Indeed</th>", html)
         self.assertIn('class="new-job applied-job"', html)
         self.assertIn("data-applied-checkbox", html)
         self.assertIn(" checked>", html)

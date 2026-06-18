@@ -9,8 +9,8 @@ from patchright.sync_api import sync_playwright
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_PROFILE_DIR = ROOT_DIR / "data" / "browser-profiles" / "linkedin-job-search"
-DEFAULT_URL = "https://www.linkedin.com/login"
+DEFAULT_PROFILE_DIR = ROOT_DIR / "data" / "browser-profiles" / "indeed-job-search"
+DEFAULT_URL = "https://ch.indeed.com/jobs"
 DEFAULT_LOCALE = "en-US"
 ACTION_TIMEOUT_MS = 15_000
 NAVIGATION_TIMEOUT_MS = 90_000
@@ -18,7 +18,7 @@ NAVIGATION_TIMEOUT_MS = 90_000
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Open LinkedIn in a dedicated persistent Patchright browser profile."
+        description="Open Indeed in the dedicated persistent Patchright browser profile."
     )
     parser.add_argument(
         "--profile-dir",
@@ -44,8 +44,8 @@ def main() -> int:
 
     print(f"Using browser profile: {profile_dir}")
     print(f"Browser locale: {args.locale}")
-    print("Log in manually in the browser window. Do not put credentials in code.")
-    print("Leave this Terminal window open while using LinkedIn.")
+    print("Handle any Indeed CAPTCHA, cookie prompt, or sign-in prompt manually.")
+    print("Leave this Terminal window open while using Indeed.")
     print("Close the browser window when finished.")
 
     with sync_playwright() as playwright:

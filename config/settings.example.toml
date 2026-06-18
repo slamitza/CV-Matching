@@ -45,7 +45,7 @@ name = "manual-csv"
 type = "csv"
 enabled = false
 # Copy data/manual_jobs.example.csv to data/manual_jobs.csv and paste job alerts,
-# saved jobs, or manually reviewed LinkedIn/company listings there.
+# saved jobs, or manually reviewed LinkedIn/Indeed/company listings there.
 path = "data/manual_jobs.csv"
 
 [[sources]]
@@ -72,7 +72,39 @@ exclude_title_keywords = [
   "writer",
   "director",
   "executive",
-  "junior"
+  "junior",
+  "doctoral"
+]
+searches = [
+  "Data Science",
+  "Bioinformatics",
+  "AI engineer",
+  "ML engineer",
+  "Data Scientist",
+  "Biostatistic",
+  "Biostatistician",
+  "Research Engineer"
+]
+
+[[sources]]
+name = "indeed"
+type = "indeed_browser"
+enabled = false
+profile_dir = "data/browser-profiles/indeed-job-search"
+base_url = "https://ch.indeed.com/jobs"
+locale = "en-US"
+location = "Switzerland"
+# 0 means no configured cap. The code still has a high safety cap to avoid
+# infinite loops if Indeed pagination behaves unexpectedly.
+max_results_per_search = 0
+max_pages_per_search = 0
+result_scrolls = 40
+exclude_title_keywords = [
+  "writer",
+  "director",
+  "executive",
+  "junior",
+  "doctoral"
 ]
 searches = [
   "Data Science",

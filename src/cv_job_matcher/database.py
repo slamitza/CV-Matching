@@ -11,6 +11,7 @@ from .models import JobPosting, MatchResult
 SITE_LABEL_SQL = """
 CASE jobs.source
     WHEN 'linkedin-browser' THEN 'LinkedIn'
+    WHEN 'indeed' THEN 'Indeed'
     WHEN 'job-ch' THEN 'job.ch'
     ELSE jobs.source
 END
@@ -238,6 +239,14 @@ class Database:
                 jobs.source_id,
                 jobs.title,
                 companies.name AS company,
+                CASE
+                    WHEN jobs.source = 'linkedin-browser' THEN jobs.url
+                    ELSE ''
+                END AS linkedin,
+                CASE
+                    WHEN jobs.source = 'indeed' THEN jobs.url
+                    ELSE ''
+                END AS indeed,
                 jobs.location,
                 jobs.source,
                 jobs.posted_at,
@@ -262,7 +271,16 @@ class Database:
         if source:
             query.append("AND jobs.source = ?")
             params.append(source)
-        query.append("ORDER BY jobs.last_seen_at DESC, jobs.first_seen_at DESC LIMIT ?")
+        query.append(
+            """
+            ORDER BY
+                companies.name COLLATE NOCASE,
+                jobs.title COLLATE NOCASE,
+                website COLLATE NOCASE,
+                jobs.last_seen_at DESC
+            LIMIT ?
+            """
+        )
         params.append(limit)
 
         with self.connect() as connection:
@@ -281,6 +299,14 @@ class Database:
                 jobs.source_id,
                 jobs.title,
                 companies.name AS company,
+                CASE
+                    WHEN jobs.source = 'linkedin-browser' THEN jobs.url
+                    ELSE ''
+                END AS linkedin,
+                CASE
+                    WHEN jobs.source = 'indeed' THEN jobs.url
+                    ELSE ''
+                END AS indeed,
                 jobs.url
             FROM jobs
             JOIN companies ON companies.id = jobs.company_id

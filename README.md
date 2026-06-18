@@ -1,194 +1,255 @@
 # CV Job Matcher
 
-CV Job Matcher scans configured job sources and keeps a local SQLite database of companies, job postings, and applications.
+CV Job Matcher keeps a local SQLite database of job postings, companies, scans, and applications. It can scan configured sources, import manually collected jobs, deduplicate repeated postings, and track which jobs you applied to.
 
-## What It Does
+LinkedIn and Indeed browser-assisted flows are intentionally conservative and visible. Their public pages and anti-abuse checks change often, so this repo also supports manual CSV import and normal-browser review flows.
 
-- Scans enabled job sources on demand or from a daily scheduler.
-- Stores companies and job postings in SQLite with deduplication.
-- Tracks posting IDs, job title, company, URL, first seen, last seen, and how often a posting was seen.
-- Tracks jobs you applied to, including status and notes.
-- Supports pluggable sources: public APIs, RSS feeds, CSV imports, and browser-assisted searches.
-- Optional: score postings against your CV when `score_jobs = true`.
-
-LinkedIn and Indeed are intentionally not hard-coded as scrapers. Their public pages and terms change often, and automated scraping may violate site rules. Use official/approved integrations where available, saved search alerts, or CSV imports for those sites.
-
-## Recommended Source Mix
-
-The most robust long-term setup is not only browser automation. Use several low-risk sources together:
-
-- LinkedIn browser-assisted searches for targeted review.
-- Job alerts from LinkedIn and niche boards, imported into `data/manual_jobs.csv`.
-- Company career pages for employers you care about.
-- RSS/Atom feeds where job boards or career pages provide them.
-- Public or approved APIs where available.
-- CSV/manual imports for anything that should not be scraped directly.
-
-This makes the daily scan less dependent on one website, reduces account-risk from repetitive browsing, and gives you a backup path when LinkedIn asks for MFA, CAPTCHA, or changes its layout.
-
-## Quick Start
+## Setup
 
 ```bash
+cd /Users/slamitza/Documents/CV-Matching
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-
+patchright install chromium
 cp config/settings.example.toml config/settings.toml
 cp data/cv.example.txt data/cv.txt
 ```
 
-Edit `data/cv.txt` with your CV content and adjust `config/settings.toml`.
+Edit:
+
+- `config/settings.toml` for search terms, sources, location, and scoring.
+- `data/cv.txt` if you enable `score_jobs = true`.
+
+Initialize the database:
 
 ```bash
 job-matcher init-db
+```
+
+Without installing the console command, use:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher init-db
+```
+
+## Main Commands
+
+Scan enabled sources:
+
+```bash
 job-matcher scan
+```
+
+Show new jobs from the latest successful scan:
+
+```bash
 job-matcher new-jobs
-job-matcher jobs
-job-matcher apply 1 --status applied --notes "Applied through company careers page"
+```
+
+List saved jobs with internal IDs:
+
+```bash
+job-matcher jobs --limit 100
+```
+
+Mark a job as applied. Use the numeric `ID` from `job-matcher jobs`, not the Indeed or LinkedIn posting ID:
+
+```bash
+job-matcher apply 123 --status applied --notes "Applied on Indeed"
 job-matcher applications
 ```
 
-Without installing the package, use:
+Export a browser-readable report:
 
 ```bash
-PYTHONPATH=src python3 -m cv_job_matcher scan --config config/settings.example.toml
+job-matcher export-jobs-html --out reports/jobs.html --title "Jobs"
+open reports/jobs.html
 ```
 
-## Source Types
+## Indeed In Chrome
 
-### Remotive
+Use this when Indeed works in your normal Chrome browser but the automation profile gets stuck on Cloudflare.
 
-Uses Remotive's public remote-jobs endpoint.
+First enable this Chrome setting once:
 
-```toml
-[[sources]]
-name = "remote-python"
-type = "remotive"
-enabled = true
-search = "python"
-category = "software-dev"
+```text
+View > Developer > Allow JavaScript from Apple Events
 ```
 
-### RSS
+Then run:
 
-Use this for job boards or company career pages that expose RSS/Atom feeds.
-
-```toml
-[[sources]]
-name = "my-rss-feed"
-type = "rss"
-enabled = false
-url = "https://example.com/jobs.rss"
-default_company = "Unknown"
+```bash
+./scripts/review_indeed_in_chrome.sh
 ```
 
-### CSV
+The script opens all configured Indeed searches in Google Chrome and waits. In Chrome, pass Cloudflare if it appears, wait for job cards, and scroll until the jobs you want are loaded. Return to Terminal and press Enter.
 
-Use CSV imports for LinkedIn, Indeed, or any other source where you maintain a saved/exported list.
+The script then:
 
-```toml
-[[sources]]
-name = "manual-import"
-type = "csv"
-enabled = false
-path = "data/manual_jobs.csv"
+- Reads visible jobs from open Indeed tabs.
+- Merges them into `data/manual_jobs.csv`.
+- Imports them through the `manual-csv` source.
+- Prints only newly added jobs.
+
+If the tabs are already open and ready, run only the save/import steps:
+
+```bash
+./scripts/save_indeed_from_chrome.sh --existing-tabs
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher scan --source manual-csv
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher new-jobs --source manual-csv
 ```
 
-Expected CSV columns:
+To open more Indeed result pages per search term:
+
+```bash
+./scripts/review_indeed_in_chrome.sh --pages 2
+```
+
+Start with the default one page. `--pages 2` opens page 1 and page 2 for every search term, which can create many tabs. Duplicate jobs are skipped during import.
+
+To run one search only:
+
+```bash
+./scripts/review_indeed_in_chrome.sh --search "Data Science"
+```
+
+## Indeed Automation Profile
+
+The dedicated Indeed browser source opens a visible Chromium profile at:
+
+```text
+data/browser-profiles/indeed-job-search/
+```
+
+Run the direct Indeed scan:
+
+```bash
+./scripts/scan_indeed_jobs.sh
+```
+
+If Indeed shows a CAPTCHA, cookie prompt, security prompt, or sign-in prompt inside that profile:
+
+```bash
+./scripts/open_indeed_profile.sh
+```
+
+Handle the prompt manually, close the browser, then rerun the scan. If Cloudflare still loops in the automation profile, use the Chrome flow above instead.
+
+## LinkedIn
+
+Open the dedicated LinkedIn profile and log in manually:
+
+```bash
+./scripts/open_linkedin_profile.sh
+```
+
+Run the LinkedIn browser-assisted scan:
+
+```bash
+./scripts/scan_linkedin_jobs.sh
+```
+
+Run LinkedIn and Indeed browser-assisted scans in parallel:
+
+```bash
+./scripts/scan_linkedin_indeed_parallel.sh
+```
+
+These flows are visible and paced conservatively. Stop if a site asks for MFA, CAPTCHA, or unusual verification.
+
+## Manual CSV Import
+
+Manual imports use:
+
+```text
+data/manual_jobs.csv
+```
+
+Expected columns:
 
 ```csv
 source_id,title,company,location,url,description,posted_at,remote
 ```
 
-Start from [data/manual_jobs.example.csv](/Users/slamitza/Documents/CV-Matching/data/manual_jobs.example.csv), then create your private `data/manual_jobs.csv`.
-
-## Daily Scanning
-
-See `docs/scheduling.md` for cron and macOS launchd examples. The repository includes `scripts/run_daily_scan.sh`, which runs one scan using `config/settings.toml`.
-
-## LinkedIn Browser Profile
-
-For interactive LinkedIn setup, use a dedicated Playwright browser profile:
+Create the file from the example if needed:
 
 ```bash
-python -m playwright install chromium
-scripts/open_linkedin_profile.sh
+cp data/manual_jobs.example.csv data/manual_jobs.csv
 ```
 
-This opens LinkedIn in a clean browser profile stored at `data/browser-profiles/linkedin-job-search/`. Log in manually with the email account you choose. The profile folder is ignored by git and keeps LinkedIn cookies/session data for later browser-assisted searches.
-
-Do not store LinkedIn passwords in this repository or in config files.
-
-For browser-assisted searches, keep the pace conservative: visible browser, reusable profile, small configured searches, pauses between actions, slow scrolling, and stop immediately if LinkedIn shows MFA, CAPTCHA, or unusual security prompts.
-
-The LinkedIn browser source is disabled by default in `config/settings.example.toml`. It is configured for:
-
-- Data Science
-- Bioinformatics
-- AI engineer
-- ML engineer
-- Data Scientist
-- Biostatistic
-- Biostatistician
-- Research Engineer
-
-It also excludes job titles containing:
-
-- writer
-- director
-- executive
-- junior
-
-The pacing profile is intentionally slow and visible:
-
-- Open LinkedIn feed first.
-- Scroll a few feed posts and pause as if reading.
-- Wait roughly 2-3 seconds plus random jitter before job search.
-- Type each search term with per-key delays.
-- Wait roughly 2-3 seconds plus random jitter before filters.
-- Apply "Past 24 hours" when available, otherwise use LinkedIn's 24-hour search URL parameter.
-- Scroll results slowly and keep collecting each newly loaded job card until no new cards appear for several rounds or the safety cap is reached.
-- Move to the next LinkedIn results page and repeat until LinkedIn has no next page.
-- Skip excluded titles such as jobs containing "writer", "director", "executive", or "junior".
-- Collect visible listings only.
-- Pause between searches.
-
-After copying `config/settings.example.toml` to `config/settings.toml`, run only this source with:
+Enable the `manual-csv` source in `config/settings.toml`, then import:
 
 ```bash
-scripts/scan_linkedin_jobs.sh
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher scan --source manual-csv
 ```
 
-This stores collected jobs in the same SQLite database with deduplication, then prints the fresh non-duplicate jobs from that scan. It never applies to jobs.
-
-The primary output fields are:
-
-- Website
-- JobID
-- Job title
-- Company
-- URL
-
-The jobs table keeps the LinkedIn posting number as `source_id`, plus title, company, URL, `first_seen_at`, `last_seen_at`, and `seen_count`. This lets you collect just-posted URLs while avoiding duplicates from previous scans.
-
-After any scan, show only new non-duplicate jobs from the latest successful LinkedIn scan:
+If you downloaded a CSV from the browser extractor, merge it into the manual CSV:
 
 ```bash
-job-matcher new-jobs --source linkedin-browser
+./scripts/import_manual_jobs_csv.sh ~/Downloads/indeed-visible-jobs-2026-06-18.csv
 ```
 
-Export all saved LinkedIn jobs to CSV:
+## Reports
+
+Export CSV:
 
 ```bash
-job-matcher export-jobs --source linkedin-browser --out reports/linkedin_jobs.csv
+job-matcher export-jobs --out reports/jobs.csv
+job-matcher export-jobs --source manual-csv --out reports/manual_jobs.csv
 ```
 
-CV scoring is off by default. If you later want keyword scoring in addition to tracking, set `score_jobs = true` in `config/settings.toml`.
+Export HTML:
+
+```bash
+job-matcher export-jobs-html --out reports/jobs.html --title "Jobs"
+job-matcher export-jobs-html --source manual-csv --out reports/manual_jobs.html --title "Manual / Indeed Jobs"
+```
+
+Open the report:
+
+```bash
+open reports/manual_jobs.html
+```
+
+## What New And Updated Mean
+
+Scan output looks like:
+
+```text
+manual-csv: found=55 new=6 updated=49 ok
+```
+
+- `found`: rows read from the source during this scan.
+- `new`: postings not previously saved in the database.
+- `updated`: postings already saved and seen again.
+
+An update refreshes job fields such as title, company, location, URL, description, `last_seen_at`, and `seen_count`. It does not delete application records, and it does not overwrite a job status such as `applied`.
+
+## Configuration
+
+Important config fields in `config/settings.toml`:
+
+- `database_path`: SQLite database location.
+- `score_jobs`: set `true` to score jobs against `data/cv.txt`.
+- `search_terms`: shared search terms for browser-assisted sources.
+- `sources`: source-specific settings.
+- `exclude_title_keywords`: words to skip in browser-assisted scans.
+- `max_results_per_search` and `max_pages_per_search`: optional safety caps.
+
+Private files such as `config/settings.toml`, `data/cv.txt`, browser profiles, generated reports, and the SQLite database should stay out of git unless you intentionally want to publish them.
 
 ## Development
 
 Run tests:
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests
+PYTHONPATH=src .venv/bin/python -m unittest discover -s tests
+```
+
+Useful local checks:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher --help
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher jobs --limit 5
 ```

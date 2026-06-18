@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from .base import JobSource
 from .csv_source import CSVSource
+from .indeed_browser import IndeedBrowserSource
 from .linkedin_browser import LinkedInBrowserSource
 from .remotive import RemotiveSource
 from .rss import RSSSource
@@ -40,6 +41,25 @@ def build_source(config: "SourceConfig") -> JobSource:
             max_results_per_search=int(config.options.get("max_results_per_search", 0)),
             max_pages_per_search=int(config.options.get("max_pages_per_search", 0)),
             feed_scrolls=int(config.options.get("feed_scrolls", 4)),
+            result_scrolls=int(config.options.get("result_scrolls", 40)),
+            exclude_title_keywords=[
+                str(keyword)
+                for keyword in config.options.get("exclude_title_keywords", [])
+            ],
+        )
+    if config.type == "indeed_browser":
+        searches = config.options.get("searches")
+        if searches is not None:
+            searches = [str(search) for search in searches]
+        return IndeedBrowserSource(
+            name=config.name,
+            profile_dir=config.options.get("profile_dir"),
+            base_url=str(config.options.get("base_url", "https://ch.indeed.com/jobs")),
+            searches=searches,
+            location=config.options.get("location"),
+            locale=str(config.options.get("locale", "en-US")),
+            max_results_per_search=int(config.options.get("max_results_per_search", 0)),
+            max_pages_per_search=int(config.options.get("max_pages_per_search", 0)),
             result_scrolls=int(config.options.get("result_scrolls", 40)),
             exclude_title_keywords=[
                 str(keyword)

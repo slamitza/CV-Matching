@@ -64,6 +64,8 @@ class LinkedInBrowserSourceTests(unittest.TestCase):
         self.assertTrue(_title_has_excluded_keyword("Associate Director", ["director"]))
         self.assertTrue(_title_has_excluded_keyword("Biotech Executive", ["executive"]))
         self.assertTrue(_title_has_excluded_keyword("Junior Quantitative Analyst", ["junior"]))
+        self.assertTrue(_title_has_excluded_keyword("Postdoctoral Researcher", ["doctoral"]))
+        self.assertTrue(_title_has_excluded_keyword("Post Doctoral Researcher", ["doctoral"]))
         self.assertFalse(_title_has_excluded_keyword("Senior Medical Researcher", ["writer"]))
 
     def test_current_start_param(self) -> None:

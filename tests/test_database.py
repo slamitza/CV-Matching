@@ -74,6 +74,57 @@ class DatabaseTests(unittest.TestCase):
 
             all_rows = database.list_jobs(source="linkedin-browser")
             self.assertEqual("LinkedIn", all_rows[0]["website"])
+            self.assertEqual("https://www.linkedin.com/jobs/view/456", all_rows[0]["linkedin"])
+            self.assertEqual("", all_rows[0]["indeed"])
+
+    def test_jobs_are_ordered_by_company_then_title(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "jobs.sqlite3")
+            database.init()
+            match = MatchResult(score=0, matched_keywords=[], missing_keywords=[])
+
+            database.upsert_job(
+                JobPosting(
+                    source="indeed",
+                    source_id="indeed-2",
+                    title="ML Engineer",
+                    company="Beta Co",
+                    url="https://ch.indeed.com/viewjob?jk=2",
+                ),
+                match,
+            )
+            database.upsert_job(
+                JobPosting(
+                    source="linkedin-browser",
+                    source_id="linkedin-1",
+                    title="Data Scientist",
+                    company="Acme Co",
+                    url="https://www.linkedin.com/jobs/view/1",
+                ),
+                match,
+            )
+            database.upsert_job(
+                JobPosting(
+                    source="indeed",
+                    source_id="indeed-1",
+                    title="AI Engineer",
+                    company="Acme Co",
+                    url="https://ch.indeed.com/viewjob?jk=1",
+                ),
+                match,
+            )
+
+            rows = database.list_jobs(limit=10)
+            self.assertEqual(
+                [
+                    ("Acme Co", "AI Engineer", "Indeed"),
+                    ("Acme Co", "Data Scientist", "LinkedIn"),
+                    ("Beta Co", "ML Engineer", "Indeed"),
+                ],
+                [(row["company"], row["title"], row["website"]) for row in rows],
+            )
+            self.assertEqual("https://ch.indeed.com/viewjob?jk=1", rows[0]["indeed"])
+            self.assertEqual("https://www.linkedin.com/jobs/view/1", rows[1]["linkedin"])
 
 
 if __name__ == "__main__":

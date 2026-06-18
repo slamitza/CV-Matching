@@ -8,7 +8,7 @@ from html import escape
 
 from .config import load_settings
 from .database import Database
-from .scanner import scan
+from .scanner import scan, scan_parallel
 
 
 DEFAULT_CONFIG = Path("config/settings.toml")
@@ -38,6 +38,20 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--source", action="append", help="Only scan a named source. Can be repeated.")
     scan_parser.add_argument("--dry-run", action="store_true", help="Fetch and score without writing.")
     scan_parser.set_defaults(func=cmd_scan)
+
+    scan_parallel_parser = subparsers.add_parser(
+        "scan-parallel",
+        help="Scan multiple sites concurrently, then write results sequentially.",
+    )
+    scan_parallel_parser.add_argument(
+        "--source",
+        action="append",
+        required=True,
+        help="Source to scan. Use more than once; sources from the same site are batched.",
+    )
+    scan_parallel_parser.add_argument("--dry-run", action="store_true", help="Fetch and score without writing.")
+    scan_parallel_parser.add_argument("--max-workers", type=int, default=2)
+    scan_parallel_parser.set_defaults(func=cmd_scan_parallel)
 
     jobs_parser = subparsers.add_parser("jobs", help="List matched jobs.")
     jobs_parser.add_argument("--min-score", type=float, default=None)
@@ -72,6 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_html_parser.add_argument("--source", default=None)
     export_html_parser.add_argument("--out", required=True)
     export_html_parser.add_argument("--limit", type=int, default=10000)
+    export_html_parser.add_argument("--title", default="Jobs")
     export_html_parser.set_defaults(func=cmd_export_jobs_html)
 
     apply_parser = subparsers.add_parser("apply", help="Record or update an application for a job.")
@@ -108,6 +123,23 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 1 if any(summary.error for summary in summaries) else 0
 
 
+def cmd_scan_parallel(args: argparse.Namespace) -> int:
+    settings = load_settings(resolve_config_path(args.config))
+    summaries = scan_parallel(
+        settings,
+        source_names=set(args.source),
+        dry_run=args.dry_run,
+        max_workers=args.max_workers,
+    )
+    for summary in summaries:
+        status = "ok" if summary.error is None else f"error: {summary.error}"
+        print(
+            f"{summary.source}: found={summary.found_count} "
+            f"new={summary.new_count} updated={summary.updated_count} {status}"
+        )
+    return 1 if any(summary.error for summary in summaries) else 0
+
+
 def cmd_jobs(args: argparse.Namespace) -> int:
     settings = load_settings(resolve_config_path(args.config))
     database = Database(settings.database_path)
@@ -129,6 +161,8 @@ def cmd_jobs(args: argparse.Namespace) -> int:
             ("source_id", "Posting"),
             ("company", "Company"),
             ("title", "Title"),
+            ("linkedin", "LinkedIn"),
+            ("indeed", "Indeed"),
             ("location", "Location"),
             ("source", "Source"),
             ("posted_at", "Posted"),
@@ -151,8 +185,10 @@ def cmd_new_jobs(args: argparse.Namespace) -> int:
         [
             ("website", "Website"),
             ("source_id", "JobID"),
-            ("title", "Job title"),
             ("company", "Company"),
+            ("title", "Job title"),
+            ("linkedin", "LinkedIn"),
+            ("indeed", "Indeed"),
             ("url", "URL"),
         ],
     )
@@ -170,8 +206,10 @@ def cmd_export_jobs(args: argparse.Namespace) -> int:
     columns = [
         ("website", "Website"),
         ("source_id", "JobID"),
-        ("title", "Job title"),
         ("company", "Company"),
+        ("title", "Job title"),
+        ("linkedin", "LinkedIn"),
+        ("indeed", "Indeed"),
         ("url", "URL"),
     ]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
@@ -194,23 +232,25 @@ def cmd_export_jobs_html(args: argparse.Namespace) -> int:
     output_path = Path(args.out)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    output_path.write_text(render_jobs_html(rows, new_source_ids), encoding="utf-8")
+    output_path.write_text(render_jobs_html(rows, new_source_ids, title=args.title), encoding="utf-8")
     print(f"Exported {len(rows)} jobs to {output_path}")
     return 0
 
 
-def render_jobs_html(rows: list[object], new_source_ids: set[str]) -> str:
+def render_jobs_html(rows: list[object], new_source_ids: set[str], *, title: str = "Jobs") -> str:
     columns = [
         ("website", "Website"),
         ("source_id", "JobID"),
-        ("title", "Job title"),
         ("company", "Company"),
+        ("title", "Job title"),
+        ("linkedin", "LinkedIn"),
+        ("indeed", "Indeed"),
         ("url", "URL"),
     ]
     rendered_rows = []
     for row in rows:
         source_id = str(_row_value(row, "source_id") or "")
-        title = str(_row_value(row, "title") or "")
+        job_title = str(_row_value(row, "title") or "")
         status = str(_row_value(row, "status") or "").lower()
         is_new = source_id in new_source_ids
         is_applied = status == "applied"
@@ -219,14 +259,14 @@ def render_jobs_html(rows: list[object], new_source_ids: set[str]) -> str:
         cells = [
             (
                 '<td class="applied-cell">'
-                f'<input type="checkbox" data-applied-checkbox aria-label="Applied: {escape(title, quote=True)}"{checked}>'
+                f'<input type="checkbox" data-applied-checkbox aria-label="Applied: {escape(job_title, quote=True)}"{checked}>'
                 "</td>"
             )
         ]
         for key, _label in columns:
             raw_value = _row_value(row, key)
             value = "" if raw_value is None else str(raw_value)
-            if key == "url" and value:
+            if key in {"linkedin", "indeed", "url"} and value:
                 safe_url = escape(value, quote=True)
                 cells.append(
                     f'<td><a href="{safe_url}" target="_blank" rel="noreferrer">{safe_url}</a></td>'
@@ -248,11 +288,12 @@ def render_jobs_html(rows: list[object], new_source_ids: set[str]) -> str:
         f'<tr><td colspan="{len(columns) + 1}" class="empty">No jobs saved yet.</td></tr>'
     )
     headers = "<th>Applied</th>" + "".join(f"<th>{escape(label)}</th>" for _key, label in columns)
+    safe_title = escape(title)
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>LinkedIn Jobs</title>
+  <title>{safe_title}</title>
   <style>
     body {{
       color: #1f2328;
@@ -307,7 +348,7 @@ def render_jobs_html(rows: list[object], new_source_ids: set[str]) -> str:
   </style>
 </head>
 <body>
-  <h1>LinkedIn Jobs</h1>
+  <h1>{safe_title}</h1>
   <p class="legend">Light green rows are new jobs from the latest successful scan. Light blue rows are checked as applied.</p>
   <table>
     <thead><tr>{headers}</tr></thead>
