@@ -44,6 +44,7 @@ class LinkedInBrowserSource(JobSource):
         profile_dir: str | None = None,
         searches: list[str] | None = None,
         location: str | None = None,
+        experience_levels: list[str] | None = None,
         locale: str = "en-US",
         max_results_per_search: int = 0,
         max_pages_per_search: int = 0,
@@ -55,6 +56,7 @@ class LinkedInBrowserSource(JobSource):
         self.profile_dir = _resolve_profile_dir(profile_dir)
         self.searches = searches or DEFAULT_SEARCHES
         self.location = location
+        self.experience_levels = experience_levels or []
         self.locale = locale
         self.max_results_per_search = max_results_per_search
         self.max_pages_per_search = max_pages_per_search
@@ -312,6 +314,8 @@ class LinkedInBrowserSource(JobSource):
         }
         if self.location:
             params["location"] = self.location
+        if self.experience_levels:
+            params["f_E"] = ",".join(str(level) for level in self.experience_levels)
         if start is not None:
             params["start"] = str(start)
         return f"https://www.linkedin.com/jobs/search/?{urlencode(params)}"

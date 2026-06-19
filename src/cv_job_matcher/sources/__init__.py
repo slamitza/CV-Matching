@@ -37,6 +37,10 @@ def build_source(config: "SourceConfig") -> JobSource:
             profile_dir=config.options.get("profile_dir"),
             searches=searches,
             location=config.options.get("location"),
+            experience_levels=[
+                str(level)
+                for level in config.options.get("experience_levels", [])
+            ],
             locale=str(config.options.get("locale", "en-US")),
             max_results_per_search=int(config.options.get("max_results_per_search", 0)),
             max_pages_per_search=int(config.options.get("max_pages_per_search", 0)),

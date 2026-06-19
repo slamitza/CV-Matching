@@ -150,6 +150,52 @@ Handle the prompt manually, close the browser, then rerun the scan. If Cloudflar
 
 ## LinkedIn
 
+Use the normal Chrome review flow when you want the same visible-tab workflow as Indeed:
+
+```bash
+./scripts/review_linkedin_in_chrome.sh
+```
+
+The script opens the configured LinkedIn job searches in Google Chrome and waits. In Chrome, log in or handle security checks if LinkedIn asks, wait for job cards, and scroll until the jobs you want are loaded. Return to Terminal and press Enter.
+
+LinkedIn search URLs can optionally include experience-level filters from `config/settings.toml`, but this is disabled by default so jobs without a classified level are not filtered out. To enable Associate and Mid-Senior level only, add:
+
+```toml
+experience_levels = [3, 4] # Associate, Mid-Senior level
+```
+
+If LinkedIn tabs are already open and ready, extract only from existing tabs:
+
+```bash
+./scripts/save_linkedin_from_chrome.sh --existing-tabs
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher scan --source manual-csv
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher new-jobs --source manual-csv
+```
+
+To open more LinkedIn result pages per search term:
+
+```bash
+./scripts/review_linkedin_in_chrome.sh --pages 2
+```
+
+Start with the default one page. LinkedIn pages use `start=25`, `start=50`, and so on.
+
+To save every available LinkedIn results page without choosing a fixed page count, use the Next-button workflow:
+
+```bash
+./scripts/review_linkedin_all_pages_in_chrome.sh
+```
+
+This opens page 1 for each configured search, waits for you to log in or handle checks, then saves each page and clicks LinkedIn's Next button until Next is unavailable or disabled. A safety cap of 10 pages per tab prevents accidental loops. If a search has only one page, it saves one page and stops.
+
+If the LinkedIn tabs are already open on page 1:
+
+```bash
+./scripts/save_linkedin_from_chrome.sh --existing-tabs --follow-next-pages
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher scan --source manual-csv
+PYTHONPATH=src .venv/bin/python -m cv_job_matcher new-jobs --source manual-csv
+```
+
 Open the dedicated LinkedIn profile and log in manually:
 
 ```bash
@@ -246,7 +292,7 @@ Important config fields in `config/settings.toml`:
 - `score_jobs`: set `true` to score jobs against `data/cv.txt`.
 - `search_terms`: shared search terms for browser-assisted sources.
 - `sources`: source-specific settings.
-- `exclude_title_keywords`: words to skip in browser-assisted scans.
+- `exclude_title_keywords`: title phrases to skip in browser-assisted scans and Chrome visible-tab imports.
 - `max_results_per_search` and `max_pages_per_search`: optional safety caps.
 
 Private files such as `config/settings.toml`, `data/cv.txt`, browser profiles, generated reports, and the SQLite database should stay out of git unless you intentionally want to publish them.

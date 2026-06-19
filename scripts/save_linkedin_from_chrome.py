@@ -19,9 +19,9 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT_DIR / "config" / "settings.toml"
 EXAMPLE_CONFIG = ROOT_DIR / "config" / "settings.example.toml"
-DEFAULT_BASE_URL = "https://ch.indeed.com/jobs"
 DEFAULT_OUT = ROOT_DIR / "data" / "manual_jobs.csv"
-EXTRACTOR_JS = ROOT_DIR / "scripts" / "extract_indeed_visible_jobs_json.js"
+EXTRACTOR_JS = ROOT_DIR / "scripts" / "extract_linkedin_visible_jobs_json.js"
+NEXT_PAGE_JS = ROOT_DIR / "scripts" / "linkedin_click_next_page.js"
 TAB_DELIMITER = "<<<CV_MATCHING_TAB>>>"
 COLUMNS = [
     "source_id",
@@ -51,22 +51,46 @@ end jsonEscape
 
 on run argv
     set jsPath to item 1 of argv
+    set nextJsPath to item 2 of argv
+    set followNextPages to item 3 of argv
+    set maxPages to item 4 of argv as integer
+    set pageWait to item 5 of argv as real
     set jsText to read POSIX file jsPath
+    set nextJsText to read POSIX file nextJsPath
     set delimiterText to "{TAB_DELIMITER}"
     set outputText to ""
     tell application "Google Chrome"
         repeat with windowIndex from 1 to count windows
             repeat with tabIndex from 1 to count tabs of window windowIndex
                 set tabUrl to URL of tab tabIndex of window windowIndex
-                if tabUrl contains "indeed." then
-                    try
-                        tell tab tabIndex of window windowIndex
-                            set jsResult to execute javascript jsText
-                        end tell
-                        set outputText to outputText & jsResult & linefeed & delimiterText & linefeed
-                    on error errorMessage number errorNumber
-                        set outputText to outputText & "{{\\"error\\":true,\\"message\\":\\"" & my jsonEscape(errorMessage) & "\\",\\"number\\":" & errorNumber & ",\\"url\\":\\"" & my jsonEscape(tabUrl) & "\\"}}" & linefeed & delimiterText & linefeed
-                    end try
+                if tabUrl contains "linkedin.com/jobs" then
+                    set pageNumber to 1
+                    repeat
+                        try
+                            tell tab tabIndex of window windowIndex
+                                set jsResult to execute javascript jsText
+                            end tell
+                            set outputText to outputText & jsResult & linefeed & delimiterText & linefeed
+                        on error errorMessage number errorNumber
+                            set outputText to outputText & "{{\\"error\\":true,\\"message\\":\\"" & my jsonEscape(errorMessage) & "\\",\\"number\\":" & errorNumber & ",\\"url\\":\\"" & my jsonEscape(tabUrl) & "\\"}}" & linefeed & delimiterText & linefeed
+                            exit repeat
+                        end try
+
+                        if followNextPages is not "1" then exit repeat
+                        if pageNumber is greater than or equal to maxPages then exit repeat
+
+                        try
+                            tell tab tabIndex of window windowIndex
+                                set nextResult to execute javascript nextJsText
+                            end tell
+                        on error
+                            exit repeat
+                        end try
+
+                        if nextResult is not "clicked" then exit repeat
+                        delay pageWait
+                        set pageNumber to pageNumber + 1
+                    end repeat
                 end if
             end repeat
         end repeat
@@ -78,21 +102,38 @@ end run
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Open Indeed searches in Chrome and save visible jobs to data/manual_jobs.csv."
+        description="Open LinkedIn searches in Chrome and save visible jobs to data/manual_jobs.csv."
     )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Settings TOML path.")
-    parser.add_argument("--source", default="indeed", help="Indeed source name to read from config.")
+    parser.add_argument("--source", default="linkedin-browser", help="LinkedIn source name.")
     parser.add_argument("--search", action="append", help="Open only this search term. Can be repeated.")
     parser.add_argument(
         "--existing-tabs",
         action="store_true",
-        help="Do not open new tabs; extract from currently open Chrome Indeed tabs.",
+        help="Do not open new tabs; extract from currently open Chrome LinkedIn tabs.",
     )
     parser.add_argument(
         "--wait",
         type=float,
         default=15.0,
         help="Seconds to wait after opening tabs before extracting.",
+    )
+    parser.add_argument(
+        "--follow-next-pages",
+        action="store_true",
+        help="Click LinkedIn's Next button in each open search tab until no next page is available.",
+    )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=10,
+        help="Safety cap per LinkedIn tab when --follow-next-pages is used.",
+    )
+    parser.add_argument(
+        "--page-wait",
+        type=float,
+        default=4.0,
+        help="Seconds to wait after clicking LinkedIn's Next button.",
     )
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="Destination manual jobs CSV.")
     args = parser.parse_args()
@@ -101,6 +142,8 @@ def main() -> int:
         str(keyword).lower()
         for keyword in source_config.get("exclude_title_keywords", [])
     ]
+    if args.max_pages < 1:
+        raise SystemExit("--max-pages must be at least 1")
 
     if not args.existing_tabs:
         urls = _configured_urls(args.config, args.source, args.search)
@@ -108,10 +151,14 @@ def main() -> int:
             print(f"Opening: {url}")
             subprocess.run(["open", "-a", "Google Chrome", url], check=False)
         if args.wait > 0:
-            print(f"Waiting {args.wait:g}s for pages and human checks...")
+            print(f"Waiting {args.wait:g}s for pages, login, and checks...")
             time.sleep(args.wait)
 
-    results = _extract_open_indeed_tabs()
+    results = _extract_open_linkedin_tabs(
+        follow_next_pages=args.follow_next_pages,
+        max_pages=args.max_pages,
+        page_wait=args.page_wait,
+    )
     rows = []
     blocked_tabs = 0
     for result in results:
@@ -130,9 +177,11 @@ def main() -> int:
 
     if blocked_tabs:
         print(
-            "Some tabs still show Cloudflare/verification. Complete them in Chrome, "
-            "then rerun with --existing-tabs."
+            "Some LinkedIn tabs still look logged out or security-gated. "
+            "Handle them in Chrome, then rerun with --existing-tabs."
         )
+    if args.follow_next_pages:
+        print(f"Followed LinkedIn Next buttons with max-pages={args.max_pages}")
 
     imported, skipped, excluded = _merge_rows(
         _resolve_path(args.out),
@@ -153,20 +202,36 @@ def _configured_urls(config: str, source_name: str, search_terms: list[str] | No
     source = _find_source(settings, source_name)
     searches = search_terms or source.get("searches") or settings.get("search_terms") or []
     if not searches:
-        raise SystemExit("No Indeed search terms found in config.")
+        raise SystemExit("No LinkedIn search terms found in config.")
 
-    base_url = str(source.get("base_url", DEFAULT_BASE_URL)).rstrip("/")
     location = source.get("location")
-    return [_indeed_search_url(base_url, str(search), location) for search in searches]
+    experience_levels = [str(level) for level in source.get("experience_levels", [])]
+    return [
+        _linkedin_search_url(str(search), location, experience_levels)
+        for search in searches
+    ]
 
 
-def _extract_open_indeed_tabs() -> list[dict]:
+def _extract_open_linkedin_tabs(
+    *,
+    follow_next_pages: bool = False,
+    max_pages: int = 1,
+    page_wait: float = 4.0,
+) -> list[dict]:
     with tempfile.NamedTemporaryFile("w", suffix=".applescript", encoding="utf-8", delete=False) as handle:
         handle.write(APPLE_SCRIPT)
         apple_script_path = handle.name
 
     completed = subprocess.run(
-        ["osascript", apple_script_path, str(EXTRACTOR_JS)],
+        [
+            "osascript",
+            apple_script_path,
+            str(EXTRACTOR_JS),
+            str(NEXT_PAGE_JS),
+            "1" if follow_next_pages else "0",
+            str(max_pages),
+            str(page_wait),
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -276,20 +341,25 @@ def _find_source(settings: dict, source_name: str) -> dict:
         if source.get("name") == source_name:
             return source
     for source in settings.get("sources", []):
-        if source.get("type") == "indeed_browser":
+        if source.get("type") == "linkedin_browser":
             return source
-    raise SystemExit(f"No Indeed source found for: {source_name}")
+    raise SystemExit(f"No LinkedIn source found for: {source_name}")
 
 
-def _indeed_search_url(base_url: str, query: str, location: object | None) -> str:
+def _linkedin_search_url(
+    query: str,
+    location: object | None,
+    experience_levels: list[str] | None = None,
+) -> str:
     params = {
-        "q": query,
-        "fromage": "1",
-        "sort": "date",
+        "keywords": query,
+        "f_TPR": "r86400",
     }
     if location:
-        params["l"] = str(location)
-    return f"{base_url}?{urlencode(params)}"
+        params["location"] = str(location)
+    if experience_levels:
+        params["f_E"] = ",".join(str(level) for level in experience_levels)
+    return f"https://www.linkedin.com/jobs/search/?{urlencode(params)}"
 
 
 if __name__ == "__main__":

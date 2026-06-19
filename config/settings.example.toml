@@ -73,7 +73,8 @@ exclude_title_keywords = [
   "director",
   "executive",
   "junior",
-  "doctoral"
+  "doctoral",
+  "head of"
 ]
 searches = [
   "Data Science",
@@ -104,7 +105,8 @@ exclude_title_keywords = [
   "director",
   "executive",
   "junior",
-  "doctoral"
+  "doctoral",
+  "head of"
 ]
 searches = [
   "Data Science",

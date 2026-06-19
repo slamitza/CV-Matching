@@ -66,6 +66,7 @@ class LinkedInBrowserSourceTests(unittest.TestCase):
         self.assertTrue(_title_has_excluded_keyword("Junior Quantitative Analyst", ["junior"]))
         self.assertTrue(_title_has_excluded_keyword("Postdoctoral Researcher", ["doctoral"]))
         self.assertTrue(_title_has_excluded_keyword("Post Doctoral Researcher", ["doctoral"]))
+        self.assertTrue(_title_has_excluded_keyword("Head of Data Science", ["head of"]))
         self.assertFalse(_title_has_excluded_keyword("Senior Medical Researcher", ["writer"]))
 
     def test_current_start_param(self) -> None:
@@ -81,6 +82,18 @@ class LinkedInBrowserSourceTests(unittest.TestCase):
         self.assertEqual(0, source.max_results_per_search)
         self.assertEqual(0, source.max_pages_per_search)
         self.assertGreaterEqual(ABSOLUTE_PAGE_SAFETY_LIMIT, 50)
+
+    def test_search_url_includes_configured_experience_levels(self) -> None:
+        source = LinkedInBrowserSource(
+            "linkedin-browser",
+            location="Zurich",
+            experience_levels=["3", "4"],
+        )
+
+        url = source._search_url("Data Science")
+
+        self.assertIn("location=Zurich", url)
+        self.assertIn("f_E=3%2C4", url)
 
     def test_visible_job_card_count_detects_empty_pages(self) -> None:
         self.assertEqual(0, _visible_job_card_count(FakePage([])))
