@@ -44,8 +44,13 @@ class IndeedBrowserSourceTests(unittest.TestCase):
         self.assertTrue(_title_has_excluded_keyword("Junior Quantitative Analyst", ["junior"]))
         self.assertTrue(_title_has_excluded_keyword("Postdoctoral Researcher", ["doctoral"]))
         self.assertTrue(_title_has_excluded_keyword("Post Doctoral Researcher", ["doctoral"]))
+        self.assertTrue(_title_has_excluded_keyword("Data Science Trainee", ["trainee"]))
+        self.assertTrue(_title_has_excluded_keyword("Data Science Intern", ["intern"]))
+        self.assertTrue(_title_has_excluded_keyword("Machine Learning Internship", ["intern"]))
+        self.assertTrue(_title_has_excluded_keyword("Machine Learning Internship", ["internship"]))
         self.assertTrue(_title_has_excluded_keyword("Head of Data Science", ["head of"]))
         self.assertFalse(_title_has_excluded_keyword("Senior Medical Researcher", ["writer"]))
+        self.assertFalse(_title_has_excluded_keyword("International Data Scientist", ["intern"]))
 
     def test_current_start_param(self) -> None:
         self.assertEqual(20, _current_start_param("https://ch.indeed.com/jobs?q=ai&start=20"))

@@ -442,7 +442,16 @@ def _clean_text(value: str | None) -> str:
 
 def _title_has_excluded_keyword(title: str, excluded_keywords: list[str]) -> bool:
     normalized_title = title.lower()
-    return any(keyword in normalized_title for keyword in excluded_keywords)
+    return any(_keyword_matches_title(normalized_title, keyword) for keyword in excluded_keywords)
+
+
+def _keyword_matches_title(normalized_title: str, keyword: str) -> bool:
+    normalized_keyword = keyword.strip().lower()
+    if not normalized_keyword:
+        return False
+    if normalized_keyword == "intern":
+        return bool(re.search(r"\bintern(?:s|ship)?\b", normalized_title))
+    return normalized_keyword in normalized_title
 
 
 def _current_start_param(url: str) -> int | None:

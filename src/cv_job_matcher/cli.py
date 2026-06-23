@@ -8,6 +8,7 @@ from html import escape
 
 from .config import load_settings
 from .database import Database
+from .dashboard import serve_jobs_dashboard
 from .scanner import scan, scan_parallel
 
 
@@ -98,6 +99,15 @@ def build_parser() -> argparse.ArgumentParser:
     applications_parser = subparsers.add_parser("applications", help="List tracked applications.")
     applications_parser.add_argument("--limit", type=int, default=50)
     applications_parser.set_defaults(func=cmd_applications)
+
+    serve_jobs_parser = subparsers.add_parser(
+        "serve-jobs",
+        help="Serve an interactive local jobs dashboard.",
+    )
+    serve_jobs_parser.add_argument("--host", default="127.0.0.1")
+    serve_jobs_parser.add_argument("--port", type=int, default=8765)
+    serve_jobs_parser.add_argument("--limit", type=int, default=10000)
+    serve_jobs_parser.set_defaults(func=cmd_serve_jobs)
 
     return parser
 
@@ -417,6 +427,13 @@ def cmd_applications(args: argparse.Namespace) -> int:
             ("notes", "Notes"),
         ],
     )
+    return 0
+
+
+def cmd_serve_jobs(args: argparse.Namespace) -> int:
+    settings = load_settings(resolve_config_path(args.config))
+    database = Database(settings.database_path)
+    serve_jobs_dashboard(database, host=args.host, port=args.port, limit=args.limit)
     return 0
 
 

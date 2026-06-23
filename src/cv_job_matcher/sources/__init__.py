@@ -46,6 +46,7 @@ def build_source(config: "SourceConfig") -> JobSource:
             max_pages_per_search=int(config.options.get("max_pages_per_search", 0)),
             feed_scrolls=int(config.options.get("feed_scrolls", 4)),
             result_scrolls=int(config.options.get("result_scrolls", 40)),
+            easy_apply_only=bool(config.options.get("easy_apply_only", False)),
             exclude_title_keywords=[
                 str(keyword)
                 for keyword in config.options.get("exclude_title_keywords", [])

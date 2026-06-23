@@ -37,6 +37,20 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(1, len(applications))
             self.assertEqual("applied", applications[0]["status"])
 
+            self.assertFalse(database.upsert_job(job, match))
+            updated_jobs = database.list_jobs(min_score=0)
+            self.assertEqual("applied", updated_jobs[0]["status"])
+
+            database.set_job_status(int(jobs[0]["id"]), status="new")
+            open_jobs = database.list_jobs(min_score=0)
+            self.assertEqual("new", open_jobs[0]["status"])
+            self.assertEqual([], database.list_applications())
+
+            database.set_job_status(int(jobs[0]["id"]), status="discarded")
+            discarded_jobs = database.list_jobs(min_score=0)
+            self.assertEqual("discarded", discarded_jobs[0]["status"])
+            self.assertEqual([], database.list_applications())
+
     def test_latest_scan_new_jobs_only(self) -> None:
         with TemporaryDirectory() as temp_dir:
             database = Database(Path(temp_dir) / "jobs.sqlite3")

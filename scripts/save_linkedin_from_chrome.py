@@ -6,6 +6,8 @@ from urllib.parse import urlencode
 import argparse
 import csv
 import json
+import re
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -142,6 +144,8 @@ def main() -> int:
         str(keyword).lower()
         for keyword in source_config.get("exclude_title_keywords", [])
     ]
+    easy_apply_only = bool(source_config.get("easy_apply_only", False))
+    database_source_ids, database_urls = _load_database_seen_keys(args.config)
     if args.max_pages < 1:
         raise SystemExit("--max-pages must be at least 1")
 
@@ -187,10 +191,13 @@ def main() -> int:
         _resolve_path(args.out),
         rows,
         exclude_title_keywords,
+        database_source_ids,
+        database_urls,
+        easy_apply_only,
     )
     print(f"Imported {imported} jobs into {_resolve_path(args.out)}")
     if excluded:
-        print(f"Excluded {excluded} rows by title filter")
+        print(f"Excluded {excluded} rows by configured filters")
     if skipped:
         print(f"Skipped {skipped} duplicate or incomplete rows")
     return 0
@@ -206,8 +213,9 @@ def _configured_urls(config: str, source_name: str, search_terms: list[str] | No
 
     location = source.get("location")
     experience_levels = [str(level) for level in source.get("experience_levels", [])]
+    easy_apply_only = bool(source.get("easy_apply_only", False))
     return [
-        _linkedin_search_url(str(search), location, experience_levels)
+        _linkedin_search_url(str(search), location, experience_levels, easy_apply_only)
         for search in searches
     ]
 
@@ -260,10 +268,19 @@ def _merge_rows(
     out_path: Path,
     new_rows: list[dict],
     exclude_title_keywords: list[str] | None = None,
+    database_source_ids: set[str] | None = None,
+    database_urls: set[str] | None = None,
+    easy_apply_only: bool = False,
 ) -> tuple[int, int, int]:
     existing_rows = _read_rows(out_path)
     seen_source_ids = {row["source_id"] for row in existing_rows if row.get("source_id")}
-    seen_urls = {row["url"] for row in existing_rows if row.get("url")}
+    seen_urls = {
+        variant
+        for row in existing_rows
+        for variant in _url_variants(row.get("url"))
+    }
+    database_source_ids = database_source_ids or set()
+    database_urls = database_urls or set()
     rows = list(existing_rows)
     imported = 0
     skipped = 0
@@ -278,9 +295,18 @@ def _merge_rows(
         if _title_has_excluded_keyword(normalized["title"], exclude_title_keywords):
             excluded += 1
             continue
+        if easy_apply_only and not _row_is_easy_apply(row):
+            excluded += 1
+            continue
         source_id = normalized["source_id"]
         url = normalized["url"]
-        if source_id in seen_source_ids or (url and url in seen_urls):
+        url_variants = _url_variants(url)
+        if (
+            source_id in seen_source_ids
+            or source_id in database_source_ids
+            or bool(url_variants & seen_urls)
+            or bool(url_variants & database_urls)
+        ):
             skipped += 1
             continue
         rows.append(normalized)
@@ -299,7 +325,32 @@ def _merge_rows(
 
 def _title_has_excluded_keyword(title: str, excluded_keywords: list[str]) -> bool:
     normalized_title = title.lower()
-    return any(keyword in normalized_title for keyword in excluded_keywords)
+    return any(_keyword_matches_title(normalized_title, keyword) for keyword in excluded_keywords)
+
+
+def _row_is_easy_apply(row: dict) -> bool:
+    if str(row.get("easy_apply") or "").strip().lower() in {"1", "true", "yes"}:
+        return True
+    return bool(re.search(r"\beasy\s+apply\b", str(row.get("description") or ""), re.I))
+
+
+def _keyword_matches_title(normalized_title: str, keyword: str) -> bool:
+    normalized_keyword = keyword.strip().lower()
+    if not normalized_keyword:
+        return False
+    if normalized_keyword == "intern":
+        return bool(re.search(r"\bintern(?:s|ship)?\b", normalized_title))
+    return normalized_keyword in normalized_title
+
+
+def _url_variants(url: str | None) -> set[str]:
+    value = str(url or "").strip()
+    if not value:
+        return set()
+    variants = {value, value.rstrip("/")}
+    if not value.endswith("/"):
+        variants.add(f"{value}/")
+    return variants
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -336,6 +387,20 @@ def _load_source_config(config: str, source_name: str) -> dict:
     return _find_source(settings, source_name)
 
 
+def _load_database_seen_keys(config: str) -> tuple[set[str], set[str]]:
+    config_path = _resolve_config_path(config)
+    settings = _load_toml(config_path)
+    database_path = _resolve_path(str(settings.get("database_path", "data/job_matcher.sqlite3")))
+    if not database_path.exists():
+        return set(), set()
+
+    with sqlite3.connect(database_path) as connection:
+        rows = connection.execute("SELECT source_id, url FROM jobs").fetchall()
+    source_ids = {str(row[0]) for row in rows if row[0]}
+    urls = {variant for row in rows for variant in _url_variants(row[1])}
+    return source_ids, urls
+
+
 def _find_source(settings: dict, source_name: str) -> dict:
     for source in settings.get("sources", []):
         if source.get("name") == source_name:
@@ -350,6 +415,7 @@ def _linkedin_search_url(
     query: str,
     location: object | None,
     experience_levels: list[str] | None = None,
+    easy_apply_only: bool = False,
 ) -> str:
     params = {
         "keywords": query,
@@ -359,6 +425,8 @@ def _linkedin_search_url(
         params["location"] = str(location)
     if experience_levels:
         params["f_E"] = ",".join(str(level) for level in experience_levels)
+    if easy_apply_only:
+        params["f_AL"] = "true"
     return f"https://www.linkedin.com/jobs/search/?{urlencode(params)}"
 
 

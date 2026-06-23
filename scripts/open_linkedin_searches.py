@@ -47,11 +47,13 @@ def main() -> int:
 
     location = source.get("location")
     experience_levels = [str(level) for level in source.get("experience_levels", [])]
+    easy_apply_only = bool(source.get("easy_apply_only", False))
     urls = [
         _linkedin_search_url(
             str(search),
             location,
             experience_levels,
+            easy_apply_only,
             start=page_index * 25,
         )
         for search in searches
@@ -102,6 +104,7 @@ def _linkedin_search_url(
     query: str,
     location: object | None,
     experience_levels: list[str] | None = None,
+    easy_apply_only: bool = False,
     *,
     start: int = 0,
 ) -> str:
@@ -113,6 +116,8 @@ def _linkedin_search_url(
         params["location"] = str(location)
     if experience_levels:
         params["f_E"] = ",".join(str(level) for level in experience_levels)
+    if easy_apply_only:
+        params["f_AL"] = "true"
     if start > 0:
         params["start"] = str(start)
     return f"https://www.linkedin.com/jobs/search/?{urlencode(params)}"

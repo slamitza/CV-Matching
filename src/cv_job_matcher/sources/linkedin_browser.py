@@ -50,6 +50,7 @@ class LinkedInBrowserSource(JobSource):
         max_pages_per_search: int = 0,
         feed_scrolls: int = 4,
         result_scrolls: int = 40,
+        easy_apply_only: bool = False,
         exclude_title_keywords: list[str] | None = None,
     ):
         super().__init__(name)
@@ -62,6 +63,7 @@ class LinkedInBrowserSource(JobSource):
         self.max_pages_per_search = max_pages_per_search
         self.feed_scrolls = feed_scrolls
         self.result_scrolls = result_scrolls
+        self.easy_apply_only = easy_apply_only
         self.exclude_title_keywords = [
             keyword.lower() for keyword in (exclude_title_keywords or [])
         ]
@@ -283,6 +285,8 @@ class LinkedInBrowserSource(JobSource):
             title = _clean_text(title or (fallback_lines[0] if fallback_lines else "Untitled"))
             company = _clean_text(company or (fallback_lines[1] if len(fallback_lines) > 1 else "Unknown"))
             location = _clean_text(location or (fallback_lines[2] if len(fallback_lines) > 2 else ""))
+            if self.easy_apply_only and not _is_easy_apply_card(card_text):
+                continue
             if _title_has_excluded_keyword(title, self.exclude_title_keywords):
                 continue
             source_id = _source_id(card.get_attribute("data-job-id"), url, title, company)
@@ -316,6 +320,8 @@ class LinkedInBrowserSource(JobSource):
             params["location"] = self.location
         if self.experience_levels:
             params["f_E"] = ",".join(str(level) for level in self.experience_levels)
+        if self.easy_apply_only:
+            params["f_AL"] = "true"
         if start is not None:
             params["start"] = str(start)
         return f"https://www.linkedin.com/jobs/search/?{urlencode(params)}"
@@ -461,9 +467,22 @@ def _clean_text(value: str | None) -> str:
     return " ".join(value.split())
 
 
+def _is_easy_apply_card(text: str) -> bool:
+    return bool(re.search(r"\beasy\s+apply\b", text, re.I))
+
+
 def _title_has_excluded_keyword(title: str, excluded_keywords: list[str]) -> bool:
     normalized_title = title.lower()
-    return any(keyword in normalized_title for keyword in excluded_keywords)
+    return any(_keyword_matches_title(normalized_title, keyword) for keyword in excluded_keywords)
+
+
+def _keyword_matches_title(normalized_title: str, keyword: str) -> bool:
+    normalized_keyword = keyword.strip().lower()
+    if not normalized_keyword:
+        return False
+    if normalized_keyword == "intern":
+        return bool(re.search(r"\bintern(?:s|ship)?\b", normalized_title))
+    return normalized_keyword in normalized_title
 
 
 def _current_start_param(url: str) -> int | None:

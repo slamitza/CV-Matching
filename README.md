@@ -60,6 +60,14 @@ job-matcher apply 123 --status applied --notes "Applied on Indeed"
 job-matcher applications
 ```
 
+For the interactive Open/Applied/Discarded dashboard:
+
+```bash
+job-matcher serve-jobs
+```
+
+Open `http://127.0.0.1:8765/`. Click `Applied` to move a job from Open Jobs to the Applied page, or `Discard` to move it to the Discarded page. The change is stored in SQLite, so future scans still recognize applied and discarded jobs as already known and keep them out of the open-jobs page.
+
 Export a browser-readable report:
 
 ```bash
@@ -83,16 +91,21 @@ Then run:
 ./scripts/review_indeed_in_chrome.sh
 ```
 
-The script opens all configured Indeed searches in Google Chrome and waits. In Chrome, pass Cloudflare if it appears, wait for job cards, and scroll until the jobs you want are loaded. Return to Terminal and press Enter.
+The script opens all configured Indeed searches in Google Chrome and gives you the same manual loop as LinkedIn:
 
-The script then:
+- In Chrome, pass Cloudflare if it appears, wait for job cards, and review each tab.
+- Do not click Next or close tabs until after you save the current page from Terminal.
+- Press `1` to save jobs from all currently open Indeed tabs and keep reviewing.
+- After pressing `1`, go back to Chrome, click Next manually on tabs that have another page, and close tabs that are done.
+- Press `0` when you are on the last useful page or all tabs are closed. The script saves one final time, imports `data/manual_jobs.csv`, and prints newly added jobs.
+- After importing, it regenerates `reports/jobs.html` and opens the interactive jobs dashboard.
+
+Each save step:
 
 - Reads visible jobs from open Indeed tabs.
 - Merges them into `data/manual_jobs.csv`.
-- Imports them through the `manual-csv` source.
-- Prints only newly added jobs.
 
-If the tabs are already open and ready, run only the save/import steps:
+If the tabs are already open and you only want to save the current visible jobs:
 
 ```bash
 ./scripts/save_indeed_from_chrome.sh --existing-tabs
@@ -164,6 +177,14 @@ LinkedIn search URLs can optionally include experience-level filters from `confi
 experience_levels = [3, 4] # Associate, Mid-Senior level
 ```
 
+LinkedIn can also be restricted to Easy Apply jobs:
+
+```toml
+easy_apply_only = true
+```
+
+When enabled, the Chrome workflow opens LinkedIn URLs with the Easy Apply filter and skips visible LinkedIn cards that do not show `Easy Apply`.
+
 If LinkedIn tabs are already open and ready, extract only from existing tabs:
 
 ```bash
@@ -180,18 +201,23 @@ To open more LinkedIn result pages per search term:
 
 Start with the default one page. LinkedIn pages use `start=25`, `start=50`, and so on.
 
-To save every available LinkedIn results page without choosing a fixed page count, use the Next-button workflow:
+To save every available LinkedIn results page without choosing a fixed page count, use the manual page-review workflow:
 
 ```bash
 ./scripts/review_linkedin_all_pages_in_chrome.sh
 ```
 
-This opens page 1 for each configured search, waits for you to log in or handle checks, then saves each page and clicks LinkedIn's Next button until Next is unavailable or disabled. A safety cap of 10 pages per tab prevents accidental loops. If a search has only one page, it saves one page and stops.
+This opens page 1 for each configured search, waits for you to log in or handle checks, then gives you a loop:
 
-If the LinkedIn tabs are already open on page 1:
+- Press `1` to save jobs from all currently open LinkedIn tabs and keep reviewing.
+- After pressing `1`, go back to Chrome, click Next manually on tabs that have another page, and close tabs that are done.
+- Press `0` when you are on the last useful page or all tabs are closed. The script saves one final time, imports `data/manual_jobs.csv`, and prints newly added jobs.
+- After importing, it regenerates `reports/jobs.html` and opens the interactive jobs dashboard.
+
+If the LinkedIn tabs are already open and you only want to save the current visible jobs:
 
 ```bash
-./scripts/save_linkedin_from_chrome.sh --existing-tabs --follow-next-pages
+./scripts/save_linkedin_from_chrome.sh --existing-tabs
 PYTHONPATH=src .venv/bin/python -m cv_job_matcher scan --source manual-csv
 PYTHONPATH=src .venv/bin/python -m cv_job_matcher new-jobs --source manual-csv
 ```
@@ -270,6 +296,14 @@ Open the report:
 open reports/manual_jobs.html
 ```
 
+Open the persistent dashboard:
+
+```bash
+job-matcher serve-jobs
+```
+
+The static HTML reports are useful for viewing/exporting. The local dashboard is the place to click `Applied` or `Discard`, because it writes that status back to SQLite.
+
 ## What New And Updated Mean
 
 Scan output looks like:
@@ -293,6 +327,7 @@ Important config fields in `config/settings.toml`:
 - `search_terms`: shared search terms for browser-assisted sources.
 - `sources`: source-specific settings.
 - `exclude_title_keywords`: title phrases to skip in browser-assisted scans and Chrome visible-tab imports.
+- `easy_apply_only`: LinkedIn-only setting to keep only jobs labeled `Easy Apply`.
 - `max_results_per_search` and `max_pages_per_search`: optional safety caps.
 
 Private files such as `config/settings.toml`, `data/cv.txt`, browser profiles, generated reports, and the SQLite database should stay out of git unless you intentionally want to publish them.

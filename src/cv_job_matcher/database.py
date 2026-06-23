@@ -371,6 +371,34 @@ class Database:
                 (status, job_id),
             )
 
+    def set_job_status(
+        self,
+        job_id: int,
+        *,
+        status: str,
+        notes: str | None = None,
+    ) -> None:
+        if status == "applied":
+            self.record_application(job_id, status=status, notes=notes)
+            return
+
+        with self.connect() as connection:
+            job = connection.execute(
+                "SELECT id FROM jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+            if not job:
+                raise ValueError(f"No job found with id {job_id}")
+
+            connection.execute(
+                "UPDATE jobs SET status = ? WHERE id = ?",
+                (status, job_id),
+            )
+            connection.execute(
+                "DELETE FROM applications WHERE job_id = ?",
+                (job_id,),
+            )
+
     def list_applications(self, *, limit: int = 50) -> list[sqlite3.Row]:
         with self.connect() as connection:
             return list(

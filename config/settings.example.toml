@@ -68,12 +68,16 @@ max_results_per_search = 0
 max_pages_per_search = 0
 feed_scrolls = 4
 result_scrolls = 40
+easy_apply_only = false
 exclude_title_keywords = [
   "writer",
   "director",
   "executive",
   "junior",
   "doctoral",
+  "trainee",
+  "intern",
+  "internship",
   "head of"
 ]
 searches = [
@@ -106,6 +110,9 @@ exclude_title_keywords = [
   "executive",
   "junior",
   "doctoral",
+  "trainee",
+  "intern",
+  "internship",
   "head of"
 ]
 searches = [

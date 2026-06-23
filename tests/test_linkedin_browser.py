@@ -6,6 +6,7 @@ from cv_job_matcher.sources.linkedin_browser import (
     ABSOLUTE_PAGE_SAFETY_LIMIT,
     LinkedInBrowserSource,
     _current_start_param,
+    _is_easy_apply_card,
     _normalize_linkedin_url,
     _source_id,
     _title_has_excluded_keyword,
@@ -66,8 +67,13 @@ class LinkedInBrowserSourceTests(unittest.TestCase):
         self.assertTrue(_title_has_excluded_keyword("Junior Quantitative Analyst", ["junior"]))
         self.assertTrue(_title_has_excluded_keyword("Postdoctoral Researcher", ["doctoral"]))
         self.assertTrue(_title_has_excluded_keyword("Post Doctoral Researcher", ["doctoral"]))
+        self.assertTrue(_title_has_excluded_keyword("Data Science Trainee", ["trainee"]))
+        self.assertTrue(_title_has_excluded_keyword("Data Science Intern", ["intern"]))
+        self.assertTrue(_title_has_excluded_keyword("Machine Learning Internship", ["intern"]))
+        self.assertTrue(_title_has_excluded_keyword("Machine Learning Internship", ["internship"]))
         self.assertTrue(_title_has_excluded_keyword("Head of Data Science", ["head of"]))
         self.assertFalse(_title_has_excluded_keyword("Senior Medical Researcher", ["writer"]))
+        self.assertFalse(_title_has_excluded_keyword("International Data Scientist", ["intern"]))
 
     def test_current_start_param(self) -> None:
         self.assertEqual(25, _current_start_param("https://www.linkedin.com/jobs/search/?start=25"))
@@ -94,6 +100,21 @@ class LinkedInBrowserSourceTests(unittest.TestCase):
 
         self.assertIn("location=Zurich", url)
         self.assertIn("f_E=3%2C4", url)
+
+    def test_search_url_includes_easy_apply_filter_when_configured(self) -> None:
+        source = LinkedInBrowserSource(
+            "linkedin-browser",
+            location="Zurich",
+            easy_apply_only=True,
+        )
+
+        url = source._search_url("Data Science")
+
+        self.assertIn("f_AL=true", url)
+
+    def test_easy_apply_card_detection(self) -> None:
+        self.assertTrue(_is_easy_apply_card("Promoted Easy Apply 1 day ago"))
+        self.assertFalse(_is_easy_apply_card("Promoted Apply on company website"))
 
     def test_visible_job_card_count_detects_empty_pages(self) -> None:
         self.assertEqual(0, _visible_job_card_count(FakePage([])))

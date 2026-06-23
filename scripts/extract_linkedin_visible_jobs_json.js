@@ -93,6 +93,7 @@
     }
 
     const description = clean(card.innerText);
+    const easyApply = /\beasy\s+apply\b/i.test(description);
     const sourceId = `linkedin-${jobId || hash(`${title}|${company}|${url}`)}`;
     rowsById.set(sourceId, {
       source_id: sourceId,
@@ -103,6 +104,7 @@
       description,
       posted_at: "last-24h",
       remote: /\bremote\b/i.test(`${title} ${jobLocation} ${description}`) ? "true" : "",
+      easy_apply: easyApply ? "true" : "",
     });
   }
 
