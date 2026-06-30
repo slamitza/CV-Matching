@@ -152,7 +152,7 @@ cp data/manual_jobs.example.csv data/manual_jobs.csv
 ## Setup
 
 ```bash
-cd /Users/slamitza/Documents/CV-Matching
+cd path/to/CV-Matching
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
