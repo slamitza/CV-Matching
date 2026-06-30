@@ -56,10 +56,10 @@ class DatabaseTests(unittest.TestCase):
             database = Database(Path(temp_dir) / "jobs.sqlite3")
             database.init()
 
-            scan_id = database.start_scan("linkedin-browser")
+            scan_id = database.start_scan("manual-csv")
             new_job = JobPosting(
-                source="linkedin-browser",
-                source_id="123",
+                source="manual-csv",
+                source_id="linkedin-123",
                 title="Data Scientist",
                 company="Example Co",
                 url="https://www.linkedin.com/jobs/view/123",
@@ -69,8 +69,8 @@ class DatabaseTests(unittest.TestCase):
             self.assertFalse(database.upsert_job(new_job, match))
 
             another_new_job = JobPosting(
-                source="linkedin-browser",
-                source_id="456",
+                source="manual-csv",
+                source_id="linkedin-456",
                 title="ML Engineer",
                 company="Another Co",
                 url="https://www.linkedin.com/jobs/view/456",
@@ -78,15 +78,15 @@ class DatabaseTests(unittest.TestCase):
             self.assertTrue(database.upsert_job(another_new_job, match))
             database.finish_scan(scan_id, found_count=2, new_count=1, updated_count=1)
 
-            rows = database.list_new_jobs_from_latest_scan(source="linkedin-browser")
+            rows = database.list_new_jobs_from_latest_scan(source="manual-csv")
             self.assertEqual(1, len(rows))
             self.assertEqual("LinkedIn", rows[0]["website"])
-            self.assertEqual("456", rows[0]["source_id"])
+            self.assertEqual("linkedin-456", rows[0]["source_id"])
             self.assertEqual("ML Engineer", rows[0]["title"])
             self.assertEqual("Another Co", rows[0]["company"])
             self.assertEqual("https://www.linkedin.com/jobs/view/456", rows[0]["url"])
 
-            all_rows = database.list_jobs(source="linkedin-browser")
+            all_rows = database.list_jobs(source="manual-csv")
             self.assertEqual("LinkedIn", all_rows[0]["website"])
             self.assertEqual("https://www.linkedin.com/jobs/view/456", all_rows[0]["linkedin"])
             self.assertEqual("", all_rows[0]["indeed"])
@@ -109,7 +109,7 @@ class DatabaseTests(unittest.TestCase):
             )
             database.upsert_job(
                 JobPosting(
-                    source="linkedin-browser",
+                    source="manual-csv",
                     source_id="linkedin-1",
                     title="Data Scientist",
                     company="Acme Co",
@@ -139,6 +139,47 @@ class DatabaseTests(unittest.TestCase):
             )
             self.assertEqual("https://ch.indeed.com/viewjob?jk=1", rows[0]["indeed"])
             self.assertEqual("https://www.linkedin.com/jobs/view/1", rows[1]["linkedin"])
+
+    def test_latest_scan_new_jobs_are_listed_first(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "jobs.sqlite3")
+            database.init()
+            match = MatchResult(score=0, matched_keywords=[], missing_keywords=[])
+
+            database.upsert_job(
+                JobPosting(
+                    source="manual-csv",
+                    source_id="old",
+                    title="AI Engineer",
+                    company="Aardvark Co",
+                ),
+                match,
+            )
+            with database.connect() as connection:
+                connection.execute(
+                    """
+                    UPDATE jobs
+                    SET first_seen_at = '2000-01-01T00:00:00.000Z'
+                    WHERE source_id = 'old'
+                    """
+                )
+
+            scan_id = database.start_scan("manual-csv")
+            database.upsert_job(
+                JobPosting(
+                    source="manual-csv",
+                    source_id="new",
+                    title="Software Engineer",
+                    company="Zeta Co",
+                ),
+                match,
+            )
+            database.finish_scan(scan_id, found_count=1, new_count=1, updated_count=0)
+
+            rows = database.list_jobs(source="manual-csv", limit=10)
+
+            self.assertEqual("new", rows[0]["source_id"])
+            self.assertEqual("old", rows[1]["source_id"])
 
 
 if __name__ == "__main__":

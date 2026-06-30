@@ -10,10 +10,14 @@ from .models import JobPosting, MatchResult
 
 SITE_LABEL_SQL = """
 CASE jobs.source
-    WHEN 'linkedin-browser' THEN 'LinkedIn'
     WHEN 'indeed' THEN 'Indeed'
     WHEN 'job-ch' THEN 'job.ch'
-    ELSE jobs.source
+    ELSE
+        CASE
+            WHEN jobs.url LIKE '%linkedin.com%' OR jobs.source_id LIKE 'linkedin-%' THEN 'LinkedIn'
+            WHEN jobs.url LIKE '%indeed.%' OR jobs.source_id LIKE 'indeed-%' THEN 'Indeed'
+            ELSE jobs.source
+        END
 END
 """
 
@@ -240,11 +244,16 @@ class Database:
                 jobs.title,
                 companies.name AS company,
                 CASE
-                    WHEN jobs.source = 'linkedin-browser' THEN jobs.url
+                    WHEN jobs.url LIKE '%linkedin.com%'
+                      OR jobs.source_id LIKE 'linkedin-%'
+                    THEN jobs.url
                     ELSE ''
                 END AS linkedin,
                 CASE
-                    WHEN jobs.source = 'indeed' THEN jobs.url
+                    WHEN jobs.source = 'indeed'
+                      OR jobs.url LIKE '%indeed.%'
+                      OR jobs.source_id LIKE 'indeed-%'
+                    THEN jobs.url
                     ELSE ''
                 END AS indeed,
                 jobs.location,
@@ -271,9 +280,27 @@ class Database:
         if source:
             query.append("AND jobs.source = ?")
             params.append(source)
+        latest_scan_source_filter = "AND scans.source = ?" if source else ""
         query.append(
-            """
+            f"""
             ORDER BY
+                CASE
+                    WHEN jobs.seen_count = 1
+                     AND jobs.first_seen_at >= COALESCE(
+                        (
+                            SELECT scans.started_at
+                            FROM scans
+                            WHERE scans.error IS NULL
+                            {latest_scan_source_filter}
+                            ORDER BY scans.started_at DESC
+                            LIMIT 1
+                        ),
+                        '0000-01-01T00:00:00Z'
+                     )
+                    THEN 0
+                    ELSE 1
+                END,
+                jobs.first_seen_at DESC,
                 companies.name COLLATE NOCASE,
                 jobs.title COLLATE NOCASE,
                 website COLLATE NOCASE,
@@ -281,6 +308,8 @@ class Database:
             LIMIT ?
             """
         )
+        if source:
+            params.append(source)
         params.append(limit)
 
         with self.connect() as connection:
@@ -300,11 +329,16 @@ class Database:
                 jobs.title,
                 companies.name AS company,
                 CASE
-                    WHEN jobs.source = 'linkedin-browser' THEN jobs.url
+                    WHEN jobs.url LIKE '%linkedin.com%'
+                      OR jobs.source_id LIKE 'linkedin-%'
+                    THEN jobs.url
                     ELSE ''
                 END AS linkedin,
                 CASE
-                    WHEN jobs.source = 'indeed' THEN jobs.url
+                    WHEN jobs.source = 'indeed'
+                      OR jobs.url LIKE '%indeed.%'
+                      OR jobs.source_id LIKE 'indeed-%'
+                    THEN jobs.url
                     ELSE ''
                 END AS indeed,
                 jobs.url

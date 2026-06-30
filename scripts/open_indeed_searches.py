@@ -31,7 +31,7 @@ def main() -> int:
     parser.add_argument(
         "--source",
         default="indeed",
-        help="Indeed source name to read from config.",
+        help="Indeed Chrome config key.",
     )
     parser.add_argument(
         "--search",
@@ -59,13 +59,13 @@ def main() -> int:
 
     config_path = _resolve_config_path(args.config)
     settings = _load_toml(config_path)
-    source = _find_source(settings, args.source)
-    searches = args.search or source.get("searches") or settings.get("search_terms") or []
+    config = _find_chrome_config(settings, "indeed", args.source)
+    searches = args.search or config.get("searches") or settings.get("search_terms") or []
     if not searches:
         raise SystemExit("No Indeed search terms found in config.")
 
-    base_url = str(source.get("base_url", DEFAULT_BASE_URL)).rstrip("/")
-    location = source.get("location")
+    base_url = str(config.get("base_url", DEFAULT_BASE_URL)).rstrip("/")
+    location = config.get("location")
     if args.pages < 1:
         raise SystemExit("--pages must be at least 1")
 
@@ -100,14 +100,15 @@ def _load_toml(path: Path) -> dict:
         return tomllib.load(file)
 
 
-def _find_source(settings: dict, source_name: str) -> dict:
+def _find_chrome_config(settings: dict, site: str, source_name: str) -> dict:
+    chrome_config = settings.get("chrome", {})
+    site_config = chrome_config.get(source_name) or chrome_config.get(site)
+    if isinstance(site_config, dict):
+        return site_config
     for source in settings.get("sources", []):
         if source.get("name") == source_name:
             return source
-    for source in settings.get("sources", []):
-        if source.get("type") == "indeed_browser":
-            return source
-    raise SystemExit(f"No Indeed source found for: {source_name}")
+    raise SystemExit(f"No Indeed Chrome config found for: {source_name}")
 
 
 def _indeed_search_url(

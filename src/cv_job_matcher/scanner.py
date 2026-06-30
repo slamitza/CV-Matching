@@ -7,6 +7,7 @@ import multiprocessing
 
 from .config import Settings, SourceConfig
 from .database import Database
+from .filters import filter_excluded_companies
 from .matcher import build_profile, score_job
 from .models import JobPosting
 from .models import MatchResult
@@ -45,7 +46,10 @@ def scan(settings: Settings, *, source_names: set[str] | None = None, dry_run: b
 
         try:
             source = build_source(source_config)
-            postings = list(source.fetch())
+            postings = filter_excluded_companies(
+                list(source.fetch()),
+                settings.excluded_companies,
+            )
             found_count = len(postings)
             for posting in postings:
                 result = (
@@ -127,6 +131,10 @@ def scan_parallel(
 
                 try:
                     postings, error = future.result()
+                    postings = filter_excluded_companies(
+                        postings,
+                        settings.excluded_companies,
+                    )
                     found_count = len(postings)
                     if error is None:
                         for posting in postings:
@@ -199,8 +207,4 @@ def _source_batches_by_site(source_configs: list[SourceConfig]) -> list[list[Sou
 
 
 def _site_key(source_config: SourceConfig) -> str:
-    if source_config.type == "linkedin_browser":
-        return "linkedin"
-    if source_config.type == "indeed_browser":
-        return "indeed"
     return source_config.name

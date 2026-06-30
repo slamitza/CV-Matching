@@ -23,9 +23,14 @@ def main() -> int:
         description="Open configured LinkedIn searches in your normal browser."
     )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Settings TOML path.")
-    parser.add_argument("--source", default="linkedin-browser", help="LinkedIn source name.")
+    parser.add_argument("--source", default="linkedin", help="LinkedIn Chrome config key.")
     parser.add_argument("--search", action="append", help="Open only this search term. Can be repeated.")
-    parser.add_argument("--pages", type=int, default=1, help="Number of result pages per search term.")
+    parser.add_argument(
+        "--pages",
+        type=int,
+        default=1,
+        help="Number of result pages per search term.",
+    )
     parser.add_argument("--print-only", action="store_true", help="Print URLs without opening tabs.")
     parser.add_argument(
         "--browser",
@@ -40,14 +45,14 @@ def main() -> int:
 
     config_path = _resolve_config_path(args.config)
     settings = _load_toml(config_path)
-    source = _find_source(settings, args.source)
-    searches = args.search or source.get("searches") or settings.get("search_terms") or []
+    config = _find_chrome_config(settings, "linkedin", args.source)
+    searches = args.search or config.get("searches") or settings.get("search_terms") or []
     if not searches:
         raise SystemExit("No LinkedIn search terms found in config.")
 
-    location = source.get("location")
-    experience_levels = [str(level) for level in source.get("experience_levels", [])]
-    easy_apply_only = bool(source.get("easy_apply_only", False))
+    location = config.get("location")
+    experience_levels = [str(level) for level in config.get("experience_levels", [])]
+    easy_apply_only = bool(config.get("easy_apply_only", False))
     urls = [
         _linkedin_search_url(
             str(search),
@@ -90,14 +95,15 @@ def _load_toml(path: Path) -> dict:
         return tomllib.load(file)
 
 
-def _find_source(settings: dict, source_name: str) -> dict:
+def _find_chrome_config(settings: dict, site: str, source_name: str) -> dict:
+    chrome_config = settings.get("chrome", {})
+    site_config = chrome_config.get(source_name) or chrome_config.get(site)
+    if isinstance(site_config, dict):
+        return site_config
     for source in settings.get("sources", []):
         if source.get("name") == source_name:
             return source
-    for source in settings.get("sources", []):
-        if source.get("type") == "linkedin_browser":
-            return source
-    raise SystemExit(f"No LinkedIn source found for: {source_name}")
+    raise SystemExit(f"No LinkedIn Chrome config found for: {source_name}")
 
 
 def _linkedin_search_url(

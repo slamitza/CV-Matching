@@ -7,17 +7,21 @@ database_path = "data/job_matcher.sqlite3"
 score_jobs = false
 minimum_score = 35
 
-# These terms are used by source adapters that support search queries.
+# These terms are used by source adapters and Chrome review helpers that support search queries.
 search_terms = [
   "Data Science",
   "Bioinformatics",
   "AI engineer",
   "ML engineer",
   "Data Scientist",
+  "Software Engineer",
   "Biostatistic",
   "Biostatistician",
   "Research Engineer"
 ]
+
+# Case-insensitive company name fragments skipped during imports and scans.
+excluded_companies = []
 
 [cv]
 path = "data/cv.txt"
@@ -47,6 +51,9 @@ enabled = false
 # Copy data/manual_jobs.example.csv to data/manual_jobs.csv and paste job alerts,
 # saved jobs, or manually reviewed LinkedIn/Indeed/company listings there.
 path = "data/manual_jobs.csv"
+exclude_title_keywords = [
+  "linux"
+]
 
 [[sources]]
 name = "rss-example"
@@ -55,20 +62,10 @@ enabled = false
 url = "https://example.com/jobs.rss"
 default_company = "Unknown"
 
-[[sources]]
-name = "linkedin-browser"
-type = "linkedin_browser"
-enabled = false
-profile_dir = "data/browser-profiles/linkedin-job-search"
-locale = "en-US"
+[chrome.linkedin]
 location = "Switzerland"
-# 0 means no configured cap. The code still has a high safety cap to avoid
-# infinite loops if LinkedIn pagination behaves unexpectedly.
-max_results_per_search = 0
-max_pages_per_search = 0
-feed_scrolls = 4
-result_scrolls = 40
 easy_apply_only = false
+experience_levels = []
 exclude_title_keywords = [
   "writer",
   "director",
@@ -78,7 +75,8 @@ exclude_title_keywords = [
   "trainee",
   "intern",
   "internship",
-  "head of"
+  "head of",
+  "linux"
 ]
 searches = [
   "Data Science",
@@ -86,24 +84,15 @@ searches = [
   "AI engineer",
   "ML engineer",
   "Data Scientist",
+  "Software Engineer",
   "Biostatistic",
   "Biostatistician",
   "Research Engineer"
 ]
 
-[[sources]]
-name = "indeed"
-type = "indeed_browser"
-enabled = false
-profile_dir = "data/browser-profiles/indeed-job-search"
+[chrome.indeed]
 base_url = "https://ch.indeed.com/jobs"
-locale = "en-US"
 location = "Switzerland"
-# 0 means no configured cap. The code still has a high safety cap to avoid
-# infinite loops if Indeed pagination behaves unexpectedly.
-max_results_per_search = 0
-max_pages_per_search = 0
-result_scrolls = 40
 exclude_title_keywords = [
   "writer",
   "director",
@@ -113,7 +102,8 @@ exclude_title_keywords = [
   "trainee",
   "intern",
   "internship",
-  "head of"
+  "head of",
+  "linux"
 ]
 searches = [
   "Data Science",
@@ -121,6 +111,7 @@ searches = [
   "AI engineer",
   "ML engineer",
   "Data Scientist",
+  "Software Engineer",
   "Biostatistic",
   "Biostatistician",
   "Research Engineer"

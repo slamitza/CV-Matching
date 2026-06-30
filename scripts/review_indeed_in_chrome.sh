@@ -9,6 +9,19 @@ else
   PYTHON="${PYTHON:-python3}"
 fi
 
+HAS_PAGES=0
+for arg in "$@"; do
+  case "$arg" in
+    --pages|--pages=*)
+      HAS_PAGES=1
+      ;;
+  esac
+done
+
+if [ "$HAS_PAGES" -eq 0 ]; then
+  set -- --pages 3 "$@"
+fi
+
 "$ROOT_DIR/scripts/open_indeed_searches.sh" --browser chrome "$@"
 
 cat <<'EOF'
@@ -18,37 +31,30 @@ Chrome tabs are open.
 In Chrome:
 1. Pass Cloudflare if it appears.
 2. Wait until each Indeed page has job cards.
-3. Review each Indeed tab manually.
-4. Do not click Next or close tabs until after you save this page from Terminal.
+3. Leave the tabs open. By default this opens pages 1 through 3 per search.
+4. Come back here and press 1 to save/import all visible jobs.
 
 In this Terminal:
-- Press 1 to save jobs from all currently open Indeed tabs, then keep reviewing.
-- After pressing 1, go back to Chrome, click Next on tabs that have another page,
-  and close tabs that are done.
-- Press 0 to save one final time, import jobs into the database, and print new jobs.
+- Press 1 to save visible jobs from all currently open Indeed tabs.
+- After saving, the script closes only Indeed tabs, imports jobs into the database,
+  prints new jobs, regenerates the report, and opens the dashboard.
 
 EOF
 
 while :; do
-  printf '%s' "Press 1 to save current Indeed tabs, or 0 to finish/import: "
+  printf '%s' "Press 1 when the Chrome tabs are ready to save/import: "
   IFS= read -r choice
-
   case "$choice" in
     1)
-      "$ROOT_DIR/scripts/save_indeed_from_chrome.sh" --existing-tabs
-      printf '%s\n' ""
-      printf '%s\n' "Saved current Indeed tabs. In Chrome, click Next on tabs that have another page, close tabs that are done, then come back here."
-      ;;
-    0)
-      "$ROOT_DIR/scripts/save_indeed_from_chrome.sh" --existing-tabs
       break
       ;;
     *)
-      printf '%s\n' "Type 1 or 0."
+      printf '%s\n' "Type 1 when ready."
       ;;
   esac
 done
 
+"$ROOT_DIR/scripts/save_indeed_from_chrome.sh" --existing-tabs --close-tabs
 PYTHONPATH="$ROOT_DIR/src" "$PYTHON" -m cv_job_matcher scan --source manual-csv
 PYTHONPATH="$ROOT_DIR/src" "$PYTHON" -m cv_job_matcher new-jobs --source manual-csv
 PYTHONPATH="$ROOT_DIR/src" "$PYTHON" -m cv_job_matcher export-jobs-html --out "$ROOT_DIR/reports/jobs.html" --title "All Jobs"

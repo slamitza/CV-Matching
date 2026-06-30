@@ -24,6 +24,7 @@ EXAMPLE_CONFIG = ROOT_DIR / "config" / "settings.example.toml"
 DEFAULT_BASE_URL = "https://ch.indeed.com/jobs"
 DEFAULT_OUT = ROOT_DIR / "data" / "manual_jobs.csv"
 EXTRACTOR_JS = ROOT_DIR / "scripts" / "extract_indeed_visible_jobs_json.js"
+NEXT_PAGE_JS = ROOT_DIR / "scripts" / "indeed_click_next_page.js"
 TAB_DELIMITER = "<<<CV_MATCHING_TAB>>>"
 COLUMNS = [
     "source_id",
@@ -53,7 +54,13 @@ end jsonEscape
 
 on run argv
     set jsPath to item 1 of argv
-    set jsText to read POSIX file jsPath
+    set nextJsPath to item 2 of argv
+    set followNextPages to item 3 of argv
+    set maxPages to item 4 of argv as integer
+    set pageWait to item 5 of argv as real
+    set closeTabsAfterSave to item 6 of argv
+    set jsText to read (POSIX file jsPath)
+    set nextJsText to read (POSIX file nextJsPath)
     set delimiterText to "{TAB_DELIMITER}"
     set outputText to ""
     tell application "Google Chrome"
@@ -61,17 +68,48 @@ on run argv
             repeat with tabIndex from 1 to count tabs of window windowIndex
                 set tabUrl to URL of tab tabIndex of window windowIndex
                 if tabUrl contains "indeed." then
-                    try
-                        tell tab tabIndex of window windowIndex
-                            set jsResult to execute javascript jsText
-                        end tell
-                        set outputText to outputText & jsResult & linefeed & delimiterText & linefeed
-                    on error errorMessage number errorNumber
-                        set outputText to outputText & "{{\\"error\\":true,\\"message\\":\\"" & my jsonEscape(errorMessage) & "\\",\\"number\\":" & errorNumber & ",\\"url\\":\\"" & my jsonEscape(tabUrl) & "\\"}}" & linefeed & delimiterText & linefeed
-                    end try
+                    set pageNumber to 1
+                    repeat
+                        try
+                            tell tab tabIndex of window windowIndex
+                                set jsResult to execute javascript jsText
+                            end tell
+                            set outputText to outputText & jsResult & linefeed & delimiterText & linefeed
+                        on error errorMessage number errorNumber
+                            set outputText to outputText & "{{\\"error\\":true,\\"message\\":\\"" & my jsonEscape(errorMessage) & "\\",\\"number\\":" & errorNumber & ",\\"url\\":\\"" & my jsonEscape(tabUrl) & "\\"}}" & linefeed & delimiterText & linefeed
+                            exit repeat
+                        end try
+
+                        if followNextPages is not "1" then exit repeat
+                        if jsResult contains "\\"blocked\\":true" then exit repeat
+                        if jsResult contains "\\"rows\\":[]" then exit repeat
+                        if pageNumber is greater than or equal to maxPages then exit repeat
+
+                        try
+                            tell tab tabIndex of window windowIndex
+                                set nextResult to execute javascript nextJsText
+                            end tell
+                        on error
+                            exit repeat
+                        end try
+
+                        if nextResult is not "clicked" then exit repeat
+                        delay pageWait
+                        set pageNumber to pageNumber + 1
+                    end repeat
                 end if
             end repeat
         end repeat
+        if closeTabsAfterSave is "1" then
+            repeat with windowIndex from (count windows) to 1 by -1
+                repeat with tabIndex from (count tabs of window windowIndex) to 1 by -1
+                    set tabUrl to URL of tab tabIndex of window windowIndex
+                    if tabUrl contains "indeed." then
+                        close tab tabIndex of window windowIndex
+                    end if
+                end repeat
+            end repeat
+        end if
     end tell
     return outputText
 end run
@@ -83,7 +121,7 @@ def main() -> int:
         description="Open Indeed searches in Chrome and save visible jobs to data/manual_jobs.csv."
     )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Settings TOML path.")
-    parser.add_argument("--source", default="indeed", help="Indeed source name to read from config.")
+    parser.add_argument("--source", default="indeed", help="Indeed Chrome config key.")
     parser.add_argument("--search", action="append", help="Open only this search term. Can be repeated.")
     parser.add_argument(
         "--existing-tabs",
@@ -96,6 +134,28 @@ def main() -> int:
         default=15.0,
         help="Seconds to wait after opening tabs before extracting.",
     )
+    parser.add_argument(
+        "--follow-next-pages",
+        action="store_true",
+        help="Click Indeed's Next button in each open search tab until no next page is available.",
+    )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=10,
+        help="Safety cap per Indeed tab when --follow-next-pages is used.",
+    )
+    parser.add_argument(
+        "--page-wait",
+        type=float,
+        default=4.0,
+        help="Seconds to wait after clicking Indeed's Next button.",
+    )
+    parser.add_argument(
+        "--close-tabs",
+        action="store_true",
+        help="Close Chrome Indeed tabs after extracting visible jobs.",
+    )
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="Destination manual jobs CSV.")
     args = parser.parse_args()
     source_config = _load_source_config(args.config, args.source)
@@ -103,7 +163,10 @@ def main() -> int:
         str(keyword).lower()
         for keyword in source_config.get("exclude_title_keywords", [])
     ]
+    exclude_companies = _load_excluded_companies(args.config, args.source)
     database_source_ids, database_urls = _load_database_seen_keys(args.config)
+    if args.max_pages < 1:
+        raise SystemExit("--max-pages must be at least 1")
 
     if not args.existing_tabs:
         urls = _configured_urls(args.config, args.source, args.search)
@@ -114,7 +177,12 @@ def main() -> int:
             print(f"Waiting {args.wait:g}s for pages and human checks...")
             time.sleep(args.wait)
 
-    results = _extract_open_indeed_tabs()
+    results = _extract_open_indeed_tabs(
+        follow_next_pages=args.follow_next_pages,
+        max_pages=args.max_pages,
+        page_wait=args.page_wait,
+        close_tabs=args.close_tabs,
+    )
     rows = []
     blocked_tabs = 0
     for result in results:
@@ -136,17 +204,22 @@ def main() -> int:
             "Some tabs still show Cloudflare/verification. Complete them in Chrome, "
             "then rerun with --existing-tabs."
         )
+    if args.follow_next_pages:
+        print(f"Followed Indeed Next buttons with max-pages={args.max_pages}")
+    if args.close_tabs:
+        print("Closed Chrome Indeed tabs after saving")
 
     imported, skipped, excluded = _merge_rows(
         _resolve_path(args.out),
         rows,
         exclude_title_keywords,
+        exclude_companies,
         database_source_ids,
         database_urls,
     )
     print(f"Imported {imported} jobs into {_resolve_path(args.out)}")
     if excluded:
-        print(f"Excluded {excluded} rows by title filter")
+        print(f"Excluded {excluded} rows by configured filters")
     if skipped:
         print(f"Skipped {skipped} duplicate or incomplete rows")
     return 0
@@ -165,13 +238,28 @@ def _configured_urls(config: str, source_name: str, search_terms: list[str] | No
     return [_indeed_search_url(base_url, str(search), location) for search in searches]
 
 
-def _extract_open_indeed_tabs() -> list[dict]:
+def _extract_open_indeed_tabs(
+    *,
+    follow_next_pages: bool = False,
+    max_pages: int = 1,
+    page_wait: float = 4.0,
+    close_tabs: bool = False,
+) -> list[dict]:
     with tempfile.NamedTemporaryFile("w", suffix=".applescript", encoding="utf-8", delete=False) as handle:
         handle.write(APPLE_SCRIPT)
         apple_script_path = handle.name
 
     completed = subprocess.run(
-        ["osascript", apple_script_path, str(EXTRACTOR_JS)],
+        [
+            "osascript",
+            apple_script_path,
+            str(EXTRACTOR_JS),
+            str(NEXT_PAGE_JS),
+            "1" if follow_next_pages else "0",
+            str(max_pages),
+            str(page_wait),
+            "1" if close_tabs else "0",
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -200,28 +288,31 @@ def _merge_rows(
     out_path: Path,
     new_rows: list[dict],
     exclude_title_keywords: list[str] | None = None,
+    exclude_companies: list[str] | None = None,
     database_source_ids: set[str] | None = None,
     database_urls: set[str] | None = None,
 ) -> tuple[int, int, int]:
-    existing_rows = _read_rows(out_path)
-    seen_source_ids = {row["source_id"] for row in existing_rows if row.get("source_id")}
+    exclude_companies = exclude_companies or []
+    rows, excluded = _filter_rows_by_company(_read_rows(out_path), exclude_companies)
+    seen_source_ids = {row["source_id"] for row in rows if row.get("source_id")}
     seen_urls = {
         variant
-        for row in existing_rows
+        for row in rows
         for variant in _url_variants(row.get("url"))
     }
     database_source_ids = database_source_ids or set()
     database_urls = database_urls or set()
-    rows = list(existing_rows)
     imported = 0
     skipped = 0
-    excluded = 0
     exclude_title_keywords = exclude_title_keywords or []
 
     for row in new_rows:
         normalized = {column: str(row.get(column) or "").strip() for column in COLUMNS}
         if not normalized["source_id"] or not normalized["title"] or not normalized["company"]:
             skipped += 1
+            continue
+        if _company_is_excluded(normalized["company"], exclude_companies):
+            excluded += 1
             continue
         if _title_has_excluded_keyword(normalized["title"], exclude_title_keywords):
             excluded += 1
@@ -254,6 +345,44 @@ def _merge_rows(
 def _title_has_excluded_keyword(title: str, excluded_keywords: list[str]) -> bool:
     normalized_title = title.lower()
     return any(_keyword_matches_title(normalized_title, keyword) for keyword in excluded_keywords)
+
+
+def _filter_rows_by_company(
+    rows: list[dict[str, str]],
+    excluded_companies: list[str],
+) -> tuple[list[dict[str, str]], int]:
+    if not excluded_companies:
+        return rows, 0
+    kept_rows = []
+    excluded = 0
+    for row in rows:
+        if _company_is_excluded(row.get("company"), excluded_companies):
+            excluded += 1
+            continue
+        kept_rows.append(row)
+    return kept_rows, excluded
+
+
+def _company_is_excluded(company: str | None, excluded_companies: list[str]) -> bool:
+    normalized_company = _normalize_company(company)
+    if not normalized_company:
+        return False
+    return any(
+        excluded_company in normalized_company
+        for excluded_company in _normalized_company_filters(excluded_companies)
+    )
+
+
+def _normalized_company_filters(excluded_companies: list[str]) -> list[str]:
+    return [
+        normalized
+        for company in excluded_companies
+        if (normalized := _normalize_company(company))
+    ]
+
+
+def _normalize_company(company: str | None) -> str:
+    return " ".join(str(company or "").casefold().split())
 
 
 def _keyword_matches_title(normalized_title: str, keyword: str) -> bool:
@@ -309,6 +438,19 @@ def _load_source_config(config: str, source_name: str) -> dict:
     return _find_source(settings, source_name)
 
 
+def _load_excluded_companies(config: str, source_name: str) -> list[str]:
+    config_path = _resolve_config_path(config)
+    settings = _load_toml(config_path)
+    source = _find_source(settings, source_name)
+    return [
+        str(company)
+        for company in [
+            *settings.get("excluded_companies", []),
+            *source.get("exclude_companies", []),
+        ]
+    ]
+
+
 def _load_database_seen_keys(config: str) -> tuple[set[str], set[str]]:
     config_path = _resolve_config_path(config)
     settings = _load_toml(config_path)
@@ -324,13 +466,14 @@ def _load_database_seen_keys(config: str) -> tuple[set[str], set[str]]:
 
 
 def _find_source(settings: dict, source_name: str) -> dict:
+    chrome_config = settings.get("chrome", {})
+    site_config = chrome_config.get(source_name) or chrome_config.get("indeed")
+    if isinstance(site_config, dict):
+        return site_config
     for source in settings.get("sources", []):
         if source.get("name") == source_name:
             return source
-    for source in settings.get("sources", []):
-        if source.get("type") == "indeed_browser":
-            return source
-    raise SystemExit(f"No Indeed source found for: {source_name}")
+    raise SystemExit(f"No Indeed Chrome config found for: {source_name}")
 
 
 def _indeed_search_url(base_url: str, query: str, location: object | None) -> str:

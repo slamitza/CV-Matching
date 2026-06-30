@@ -57,8 +57,9 @@ on run argv
     set followNextPages to item 3 of argv
     set maxPages to item 4 of argv as integer
     set pageWait to item 5 of argv as real
-    set jsText to read POSIX file jsPath
-    set nextJsText to read POSIX file nextJsPath
+    set closeTabsAfterSave to item 6 of argv
+    set jsText to read (POSIX file jsPath)
+    set nextJsText to read (POSIX file nextJsPath)
     set delimiterText to "{TAB_DELIMITER}"
     set outputText to ""
     tell application "Google Chrome"
@@ -79,6 +80,8 @@ on run argv
                         end try
 
                         if followNextPages is not "1" then exit repeat
+                        if jsResult contains "\\"blocked\\":true" then exit repeat
+                        if jsResult contains "\\"rows\\":[]" then exit repeat
                         if pageNumber is greater than or equal to maxPages then exit repeat
 
                         try
@@ -96,6 +99,16 @@ on run argv
                 end if
             end repeat
         end repeat
+        if closeTabsAfterSave is "1" then
+            repeat with windowIndex from (count windows) to 1 by -1
+                repeat with tabIndex from (count tabs of window windowIndex) to 1 by -1
+                    set tabUrl to URL of tab tabIndex of window windowIndex
+                    if tabUrl contains "linkedin.com/jobs" then
+                        close tab tabIndex of window windowIndex
+                    end if
+                end repeat
+            end repeat
+        end if
     end tell
     return outputText
 end run
@@ -107,7 +120,7 @@ def main() -> int:
         description="Open LinkedIn searches in Chrome and save visible jobs to data/manual_jobs.csv."
     )
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Settings TOML path.")
-    parser.add_argument("--source", default="linkedin-browser", help="LinkedIn source name.")
+    parser.add_argument("--source", default="linkedin", help="LinkedIn Chrome config key.")
     parser.add_argument("--search", action="append", help="Open only this search term. Can be repeated.")
     parser.add_argument(
         "--existing-tabs",
@@ -137,6 +150,11 @@ def main() -> int:
         default=4.0,
         help="Seconds to wait after clicking LinkedIn's Next button.",
     )
+    parser.add_argument(
+        "--close-tabs",
+        action="store_true",
+        help="Close Chrome LinkedIn job tabs after extracting visible jobs.",
+    )
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="Destination manual jobs CSV.")
     args = parser.parse_args()
     source_config = _load_source_config(args.config, args.source)
@@ -144,6 +162,7 @@ def main() -> int:
         str(keyword).lower()
         for keyword in source_config.get("exclude_title_keywords", [])
     ]
+    exclude_companies = _load_excluded_companies(args.config, args.source)
     easy_apply_only = bool(source_config.get("easy_apply_only", False))
     database_source_ids, database_urls = _load_database_seen_keys(args.config)
     if args.max_pages < 1:
@@ -162,6 +181,7 @@ def main() -> int:
         follow_next_pages=args.follow_next_pages,
         max_pages=args.max_pages,
         page_wait=args.page_wait,
+        close_tabs=args.close_tabs,
     )
     rows = []
     blocked_tabs = 0
@@ -186,11 +206,14 @@ def main() -> int:
         )
     if args.follow_next_pages:
         print(f"Followed LinkedIn Next buttons with max-pages={args.max_pages}")
+    if args.close_tabs:
+        print("Closed Chrome LinkedIn job tabs after saving")
 
     imported, skipped, excluded = _merge_rows(
         _resolve_path(args.out),
         rows,
         exclude_title_keywords,
+        exclude_companies,
         database_source_ids,
         database_urls,
         easy_apply_only,
@@ -225,6 +248,7 @@ def _extract_open_linkedin_tabs(
     follow_next_pages: bool = False,
     max_pages: int = 1,
     page_wait: float = 4.0,
+    close_tabs: bool = False,
 ) -> list[dict]:
     with tempfile.NamedTemporaryFile("w", suffix=".applescript", encoding="utf-8", delete=False) as handle:
         handle.write(APPLE_SCRIPT)
@@ -239,6 +263,7 @@ def _extract_open_linkedin_tabs(
             "1" if follow_next_pages else "0",
             str(max_pages),
             str(page_wait),
+            "1" if close_tabs else "0",
         ],
         capture_output=True,
         text=True,
@@ -268,29 +293,32 @@ def _merge_rows(
     out_path: Path,
     new_rows: list[dict],
     exclude_title_keywords: list[str] | None = None,
+    exclude_companies: list[str] | None = None,
     database_source_ids: set[str] | None = None,
     database_urls: set[str] | None = None,
     easy_apply_only: bool = False,
 ) -> tuple[int, int, int]:
-    existing_rows = _read_rows(out_path)
-    seen_source_ids = {row["source_id"] for row in existing_rows if row.get("source_id")}
+    exclude_companies = exclude_companies or []
+    rows, excluded = _filter_rows_by_company(_read_rows(out_path), exclude_companies)
+    seen_source_ids = {row["source_id"] for row in rows if row.get("source_id")}
     seen_urls = {
         variant
-        for row in existing_rows
+        for row in rows
         for variant in _url_variants(row.get("url"))
     }
     database_source_ids = database_source_ids or set()
     database_urls = database_urls or set()
-    rows = list(existing_rows)
     imported = 0
     skipped = 0
-    excluded = 0
     exclude_title_keywords = exclude_title_keywords or []
 
     for row in new_rows:
         normalized = {column: str(row.get(column) or "").strip() for column in COLUMNS}
         if not normalized["source_id"] or not normalized["title"] or not normalized["company"]:
             skipped += 1
+            continue
+        if _company_is_excluded(normalized["company"], exclude_companies):
+            excluded += 1
             continue
         if _title_has_excluded_keyword(normalized["title"], exclude_title_keywords):
             excluded += 1
@@ -326,6 +354,44 @@ def _merge_rows(
 def _title_has_excluded_keyword(title: str, excluded_keywords: list[str]) -> bool:
     normalized_title = title.lower()
     return any(_keyword_matches_title(normalized_title, keyword) for keyword in excluded_keywords)
+
+
+def _filter_rows_by_company(
+    rows: list[dict[str, str]],
+    excluded_companies: list[str],
+) -> tuple[list[dict[str, str]], int]:
+    if not excluded_companies:
+        return rows, 0
+    kept_rows = []
+    excluded = 0
+    for row in rows:
+        if _company_is_excluded(row.get("company"), excluded_companies):
+            excluded += 1
+            continue
+        kept_rows.append(row)
+    return kept_rows, excluded
+
+
+def _company_is_excluded(company: str | None, excluded_companies: list[str]) -> bool:
+    normalized_company = _normalize_company(company)
+    if not normalized_company:
+        return False
+    return any(
+        excluded_company in normalized_company
+        for excluded_company in _normalized_company_filters(excluded_companies)
+    )
+
+
+def _normalized_company_filters(excluded_companies: list[str]) -> list[str]:
+    return [
+        normalized
+        for company in excluded_companies
+        if (normalized := _normalize_company(company))
+    ]
+
+
+def _normalize_company(company: str | None) -> str:
+    return " ".join(str(company or "").casefold().split())
 
 
 def _row_is_easy_apply(row: dict) -> bool:
@@ -387,6 +453,19 @@ def _load_source_config(config: str, source_name: str) -> dict:
     return _find_source(settings, source_name)
 
 
+def _load_excluded_companies(config: str, source_name: str) -> list[str]:
+    config_path = _resolve_config_path(config)
+    settings = _load_toml(config_path)
+    source = _find_source(settings, source_name)
+    return [
+        str(company)
+        for company in [
+            *settings.get("excluded_companies", []),
+            *source.get("exclude_companies", []),
+        ]
+    ]
+
+
 def _load_database_seen_keys(config: str) -> tuple[set[str], set[str]]:
     config_path = _resolve_config_path(config)
     settings = _load_toml(config_path)
@@ -402,13 +481,14 @@ def _load_database_seen_keys(config: str) -> tuple[set[str], set[str]]:
 
 
 def _find_source(settings: dict, source_name: str) -> dict:
+    chrome_config = settings.get("chrome", {})
+    site_config = chrome_config.get(source_name) or chrome_config.get("linkedin")
+    if isinstance(site_config, dict):
+        return site_config
     for source in settings.get("sources", []):
         if source.get("name") == source_name:
             return source
-    for source in settings.get("sources", []):
-        if source.get("type") == "linkedin_browser":
-            return source
-    raise SystemExit(f"No LinkedIn source found for: {source_name}")
+    raise SystemExit(f"No LinkedIn Chrome config found for: {source_name}")
 
 
 def _linkedin_search_url(

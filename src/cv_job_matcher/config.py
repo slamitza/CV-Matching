@@ -26,6 +26,7 @@ class Settings:
     score_jobs: bool
     minimum_score: float
     search_terms: list[str]
+    excluded_companies: list[str]
     required_keywords: list[str]
     sources: list[SourceConfig]
 
@@ -58,6 +59,7 @@ def load_settings(path: str | Path) -> Settings:
         score_jobs=bool(data.get("score_jobs", False)),
         minimum_score=float(data.get("minimum_score", 0)),
         search_terms=[str(term) for term in data.get("search_terms", [])],
+        excluded_companies=[str(company) for company in data.get("excluded_companies", [])],
         required_keywords=[str(term).lower() for term in cv_config.get("required_keywords", [])],
         sources=source_configs,
     )
